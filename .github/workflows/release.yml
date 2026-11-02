@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# On a tag vX.Y.Z (docs/RELEASING.md): the audit, CI's builds (the proof that the tag compiles and starts), and a
+# DRAFT release with NO files, its text from tools/release/notes.sh. The archives hold the game's program,
+# translated from the player's own Default.xbe, so they are built on a contributor's Mac (tools/release/), uploaded
+# to the draft (gh release upload) and the draft published by hand. CI never builds or holds a release archive.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: tools/audit.sh
+      - name: The tag is the version
+        run: test "v$(cat VERSION)" = "$GITHUB_REF_NAME"
+      - name: The changelog has the version
+        run: tools/release/notes.sh "${GITHUB_REF_NAME#v}" > /dev/null
+
+  build:
+    needs: audit
+    uses: ./.github/workflows/ci.yml
+
+  draft:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Draft release with its text, no files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tools/release/notes.sh "${GITHUB_REF_NAME#v}" > notes.md
+          pre=""
+          case "$GITHUB_REF_NAME" in *-beta*|*-rc*) pre="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" --draft $pre --title "$GITHUB_REF_NAME" --notes-file notes.md

@@ -1,0 +1,24 @@
+# The introduction service for Soulcalibur II's online play (online/README.md): `npx wrangler deploy` from this folder
+name = "soulcalibur2-online"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+[[durable_objects.bindings]]
+name = "MATCHES"
+class_name = "Match"
+
+[[durable_objects.bindings]]
+name = "LOBBIES"
+class_name = "Lobby"
+
+[[durable_objects.bindings]]
+name = "STATS"
+class_name = "Stats"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Match", "Lobby", "Room", "Stats"]

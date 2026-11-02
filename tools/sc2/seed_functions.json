@@ -1,0 +1,50 @@
+[
+  {
+    "start": "0x0016E0DC",
+    "note": "XPP device-type callback reached only through its type table"
+  },
+  {
+    "start": "0x00087710",
+    "note": "Reached only as an immediate (data_imm) after padding"
+  },
+  {
+    "start": "0x000A3400",
+    "note": "Reached only as an immediate (data_imm) after padding"
+  },
+  {
+    "start": "0x000F0CA0",
+    "note": "Reached only as an immediate (data_imm) after padding"
+  },
+  {
+    "start": "0x00109EB0",
+    "note": "CRI thread entry passed to CreateThread as an immediate"
+  },
+  {
+    "start": "0x0010A3B0",
+    "note": "CRI thread entry passed to CreateThread as an immediate"
+  },
+  {
+    "start": "0x001150F0",
+    "note": "Reached only as an immediate (data_imm) after padding"
+  },
+  {
+    "start": "0x0014E0F1",
+    "note": "Destructor thunk registered as an immediate (0x1456b4)"
+  },
+  {
+    "start": "0x00016FA0",
+    "note": "Virtual method reached only through its vtable (0x176bc8)"
+  },
+  {
+    "start": "0x000DACA0",
+    "note": "Game handler reached only through a function table (0x337020)"
+  },
+  {
+    "start": "0x0006E550",
+    "note": "Function table entry (0x17b3d8) right after data bytes; found at the menu"
+  },
+  {
+    "start": "0x000B17A0",
+    "note": "Function table entry (0x1837e8) right after data bytes; found by the table scan"
+  }
+]

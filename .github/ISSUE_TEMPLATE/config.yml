@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Where do I get the game?
+    url: https://github.com/tmcleroy/soulcalibur2-recomp#getting-started
+    about: From your own discs. This project can't help you find game files; issues asking for them are closed.

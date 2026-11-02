@@ -1,0 +1,82 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Every push to main, every pull request, and a release's tag (release.yml), without the game: nothing of it can be
+# in the repository, so CI cannot build the game's program (it is translated from the player's Default.xbe). It
+# audits the files (tools/audit.sh, and the recomp-common copy) and proves that the rest compiles and starts: the
+# launcher (with the guest converters it links) on Linux and macOS, the guest tool, and the shared runtime's own
+# tests at the pinned commit. The game's program and the release archives are built on a contributor's Mac
+# (docs/RELEASING.md). The Mac job runs on main and on a release's tag only (its minutes cost the most).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  LINUX_PACKAGES: >-
+    ninja-build zlib1g-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev
+    libxtst-dev libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev libegl-dev libgl-dev
+    libpulse-dev libasound2-dev libudev-dev libdbus-1-dev libpipewire-0.3-dev
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: tools/audit.sh
+      - run: tools/sync-common.sh --check
+      - name: The Python tools compile
+        run: python3 -m compileall -q tools/guests tools/sc2 tools/build_game.py tools/xbe_port.py tools/xbe_offsets.py tools/xbe_deep.py tools/xdk_symbols.py tools/asm_pair.py
+
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      # (the shared runtime only: the lifter, tools/xboxrecomp, is for the lift, which needs the game)
+      - run: git submodule update --init --depth 1 third_party/doa2u-re
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends $LINUX_PACKAGES
+      - name: The launcher (SDL 3 built in, as the release has it)
+        run: |
+          cmake -S launcher -B build/launcher -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/launcher
+      - name: The guest tool
+        run: |
+          cmake -S guest -B build/guest -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/guest
+      - name: The launcher starts with no display
+        run: |
+          mkdir -p "$RUNNER_TEMP/home"
+          SDL_VIDEO_DRIVER=dummy SDL_RENDER_DRIVER=software SOULCALIBUR2_HOME="$RUNNER_TEMP/home" \
+            build/launcher/soulcalibur2-launcher --screenshot "$RUNNER_TEMP/page"
+          ls "$RUNNER_TEMP"/page*.png
+
+  macos:
+    if: github.event_name != 'pull_request'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: git submodule update --init --depth 1 third_party/doa2u-re
+      - run: brew install ninja sdl3 shaderc spirv-cross
+      - name: The shared runtime's tests
+        run: |
+          cmake -S third_party/doa2u-re/recomp-runtime -B build/runtime-tests -G Ninja
+          cmake --build build/runtime-tests
+          ctest --test-dir build/runtime-tests --output-on-failure
+      - name: The launcher
+        run: |
+          cmake -S launcher -B build/launcher -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/launcher
+      - name: The launcher starts with no display
+        run: |
+          mkdir -p "$RUNNER_TEMP/home"
+          SDL_VIDEO_DRIVER=dummy SDL_RENDER_DRIVER=software SOULCALIBUR2_HOME="$RUNNER_TEMP/home" \
+            build/launcher/soulcalibur2-launcher --screenshot "$RUNNER_TEMP/page"
+          ls "$RUNNER_TEMP"/page*.png

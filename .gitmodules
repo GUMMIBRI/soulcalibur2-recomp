@@ -1,0 +1,7 @@
+[submodule "tools/xboxrecomp"]
+	path = tools/xboxrecomp
+	url = https://github.com/NoRain211/xboxrecomp.git
+[submodule "third_party/doa2u-re"]
+	path = third_party/doa2u-re
+	url = https://github.com/tmcleroy/doa2u-re.git
+	branch = soulcalibur2-runtime
