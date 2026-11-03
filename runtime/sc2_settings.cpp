@@ -11,8 +11,8 @@ namespace sc2 {
 
 namespace {
 
-enum : unsigned { kScaleChoices = 4 };
-constexpr unsigned kScales[kScaleChoices] = {1u, 2u, 3u, 4u};
+enum : unsigned { kScaleChoices = 7 };
+constexpr unsigned kScales[kScaleChoices] = {1u, 2u, 3u, 4u, 5u, 6u, 8u};
 
 /* The controls (the stick clicks left out); sc2_input.cpp gives each to the
    runtime by its name. */
@@ -59,8 +59,10 @@ constexpr int kPlayers = 2;
 const std::vector<recomp::FeatureInfo> &Features()
 {
     static const std::vector<recomp::FeatureInfo> features = {
-        {"resolution", "Graphics", "Resolution", "Draws the game at a multiple of the Xbox's 640x480.",
-            recomp::kFeatureEnhanced, {"Original (640x480)", "2x (1280x960)", "3x (1920x1440)", "4x (2560x1920)"}},
+        {"resolution", "Graphics", "Resolution", "Draws the game at a multiple of the Xbox's 640x480. Above 4x needs a fast graphics card: 6x and 8x are "
+            "for a 4K screen.",
+            recomp::kFeatureEnhanced, {"Original (640x480)", "2x (1280x960)", "3x (1920x1440)", "4x (2560x1920)",
+                "5x (3200x2400)", "6x (3840x2880)", "8x (5120x3840)"}},
         {"shader", "Graphics", "Shader",
             "The picture drawn through one of RetroArch's shaders, at the Xbox's 480 lines whatever the resolution. "
             "CRT: a curved monitor. CRT Lottes and CRT Guest: flat monitors, sharp and bright. CRT Royale: the closest "
@@ -70,6 +72,8 @@ const std::vector<recomp::FeatureInfo> &Features()
             "The in-game menu is drawn over it without the shader.",
             0, {"Off", "CRT", "CRT Lottes", "CRT Royale", "CRT Guest", "CRT Light", "Scanlines: light",
                 "Scanlines: strong", "Scanlines: OSSC", "xBRZ", "ScaleFX", "Your own"}},
+        {"fps_counter", "Graphics", "FPS counter",
+            "The frames shown each second, in the top right corner. The game runs at 60.", 0, {}},
         {"health_refill", "Training", "Health refill",
             "A fighter's health fills again once a combo is over (when it has stayed put for a moment).", 0, {}},
         {"infinite_time", "Training", "Infinite time", "The round's clock stays where it started.", 0, {}},
@@ -164,6 +168,7 @@ Settings LoadSettings(const std::string &path)
     Settings settings;
     for (size_t i = 0; i < features.size(); ++i) {
         if (features[i].name == "health_refill") settings.health_refill = values[i] != 0;
+        else if (features[i].name == "fps_counter") settings.fps_counter = values[i] != 0;
         else if (features[i].name == "infinite_time") settings.infinite_time = values[i] != 0;
         else if (features[i].name == "input_display") settings.input_display = values[i] != 0;
         else if (features[i].name == "combo_readout") settings.combo_readout = values[i] != 0;

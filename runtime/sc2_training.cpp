@@ -51,6 +51,7 @@ extern "C" {
 }
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -639,13 +640,33 @@ unsigned OnlineStreak(int &player)
     return streak;
 }
 
+/* The FPS counter's text: frames shown (a call a frame) over the last half second */
+void FpsText(char *out, size_t size)
+{
+    using Clock = std::chrono::steady_clock;
+    static Clock::time_point since = Clock::now();
+    static unsigned frames;
+    static double rate;
+    ++frames;
+    const double seconds = std::chrono::duration<double>(Clock::now() - since).count();
+    if (seconds >= 0.5) {
+        rate = frames / seconds;
+        frames = 0u;
+        since = Clock::now();
+    }
+    if (TrainingState().fps_counter) std::snprintf(out, size, "%.0f FPS", rate);
+}
+
 void ApplyTraining(uint32_t)
 {
     const Training &training = TrainingState();
+    char fps[sizeof Sc2Panel{}.fps] = "";
+    FpsText(fps, sizeof fps);
     if (sc2_net_live) {
         /* (an online match has none of training: nothing written that the other game would not write; only the win
            streak, read from VS Battle's counts, which both games have alike) */
         Sc2Panel online{};
+        std::memcpy(online.fps, fps, sizeof fps);
         int player = -1;
         const unsigned streak = OnlineStreak(player);
         if (streak >= 2u && player >= 0)
@@ -679,6 +700,7 @@ void ApplyTraining(uint32_t)
 
     /* The panels */
     Sc2Panel panel{};
+    std::memcpy(panel.fps, fps, sizeof fps);
     if (note_frames != 0u) {
         --note_frames;
         std::snprintf(panel.note, sizeof panel.note, "%s", note);

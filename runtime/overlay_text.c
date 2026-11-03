@@ -118,7 +118,7 @@ void sc2_panel_take(Sc2Panel *destination)
 bool sc2_panel_empty(const Sc2Panel *source)
 {
     return source->input_rows[0] == 0u && source->input_rows[1] == 0u && source->readout_rows[0] == 0u &&
-        source->readout_rows[1] == 0u && source->note[0] == '\0' && source->shape_count == 0u && source->meter_length == 0u;
+        source->readout_rows[1] == 0u && source->note[0] == '\0' && source->fps[0] == '\0' && source->shape_count == 0u && source->meter_length == 0u;
 }
 
 /* (the presenters skip drawing an empty overlay: with a panel up it is not) */

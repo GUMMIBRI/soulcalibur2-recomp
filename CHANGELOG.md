@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Resolutions up to 8x**: 5x (3200x2400), 6x (3840x2880) and 8x (5120x3840) on the Graphics page, for 4K
+  screens and fast graphics cards.
+- **Steadier on 120 Hz screens (Mac)**: the game's 60 frames a second now follow the display's refreshes, so on a
+  120 Hz (or 60, 180, 240 Hz) screen each frame stays up for the same number of refreshes. Before, about one frame in
+  thirty was shown for one refresh and the next for three, a small hitch every second or two.
+- **FPS counter**: frames shown each second in the top right corner, on the Graphics page and in the in-game menu
+  (off at first).
 - **Android**: the launcher and the game in one app (`Soulcalibur2Recomp-android.apk`, 64-bit, Android 10 or later),
   with touch controls that are player 1's pad and work the in-game menu; Android's Back opens the menu. The discs
   you choose are copied into the app's folder.

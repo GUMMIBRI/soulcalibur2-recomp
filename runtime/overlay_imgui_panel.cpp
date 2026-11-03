@@ -139,6 +139,12 @@ void recomp_overlay_imgui_build(const RecompOverlayText &text, float width, floa
     Meter(panel, width, height);
     Side(panel, 0, width, height);
     Side(panel, 1, width, height);
+    if (panel.fps[0] != '\0') {
+        ImGui::SetNextWindowPos(ImVec2(width * 0.98f, height * 0.02f), 0, ImVec2(1.0f, 0.0f));
+        ImGui::Begin("sc2-fps", nullptr, kFlags);
+        ImGui::TextUnformatted(panel.fps);
+        ImGui::End();
+    }
     if (panel.note[0] != '\0') {
         ImGui::SetNextWindowPos(ImVec2(width * 0.5f, height * (text.hint[0] != '\0' ? 0.86f : 0.95f)), 0, ImVec2(0.5f, 1.0f));
         ImGui::Begin("sc2-note", nullptr, kFlags);
