@@ -51,8 +51,18 @@ void toSystemLog()
 
 } // namespace
 
+// SDL's failed checks: written to the log (SDL has already said which) and passed over, not shown in a dialog, which
+// would be made through Java from a guest fiber's stack and stop the game there (host_call.h)
+static SDL_AssertState SDLCALL passAssertion(const SDL_AssertData *data, void *)
+{
+    __android_log_print(ANDROID_LOG_WARN, "soulcalibur2", "SDL check failed (passed over): %s at %s:%d",
+        data->condition, data->filename, data->linenum);
+    return SDL_ASSERTION_IGNORE;
+}
+
 void sc2_android_start()
 {
+    SDL_SetAssertionHandler(passAssertion, nullptr);
     // Landscape either way up, as the launcher (the manifest's SDL_ENV values don't reach the game's process), and
     // the back button for the game (it opens the menu) instead of closing it
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
