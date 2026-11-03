@@ -34,6 +34,7 @@
 #include "runner_load.h"
 #include "save_transaction.h"
 #include "sc2_settings.h"
+#include "d3d_texture_replace.h"
 #include "sc2_menu.h"
 #include "sc2_training.h"
 #include "sc2_guest.h"
@@ -1148,6 +1149,12 @@ int main(int argc, char **argv)
         if (settings.scale > 1u && std::getenv("RECOMP_D3D_SCALE") == nullptr)
             setenv("RECOMP_D3D_SCALE", std::to_string(settings.scale).c_str(), 1);
         sc2::ApplyBindings(settingsPath);
+        /* Texture packs (d3d_texture_replace.h): textures/ and textures-dump/ beside settings.ini */
+        const std::filesystem::path folder = std::filesystem::u8path(settingsPath).parent_path();
+        recomp_d3d_textures_configure(settings.hd_textures ? (folder / "textures").u8string().c_str() : nullptr,
+            settings.texture_dump ? (folder / "textures-dump").u8string().c_str() : nullptr);
+    } else {
+        recomp_d3d_textures_configure(nullptr, nullptr);   // (RECOMP_TEXTURES, RECOMP_TEXTURE_DUMP)
     }
     sc2::InstallMenu(settingsPath, menuShot);
     sc2::SetShader(shader);

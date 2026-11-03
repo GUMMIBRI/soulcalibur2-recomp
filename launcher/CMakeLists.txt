@@ -21,6 +21,7 @@ set(LAUNCHER_DISCLAIMER "Not affiliated with Bandai Namco.")
 # (the Guest page builds Link's data from the player's GameCube disc: guest/, which brings the disc image reader)
 set(LAUNCHER_PORT_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/description.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/guest_page.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/textures_page.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../runtime/sc2_settings.cpp)
 # (the launcher updates itself from the releases: each system's manifest and archive, tools/release/)
 set(LAUNCHER_UPDATE_REPO tmcleroy/soulcalibur2-recomp)
