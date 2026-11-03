@@ -8,12 +8,17 @@
 #include "sc2_android.h"
 #include "sc2_settings.h"
 #include "sc2_touch.h"
+#include "host_call.h"
 
 #include <SDL3/SDL.h>
 #include <android/log.h>
 #include <dlfcn.h>
 #include <signal.h>
 #include <unwind.h>
+#include <sched.h>
+
+#include <algorithm>
+#include <vector>
 #include <fcntl.h>
 #include <jni.h>
 #include <unistd.h>
@@ -91,6 +96,36 @@ static void crashed(int signal, siginfo_t *info, void *)
     raise(signal);
 }
 
+// The game's thread on the phone's fast cores only (those whose top speed is above the slowest's: not the
+// efficiency cores); the threads it starts later inherit it, the sound's among them
+static void fastCores()
+{
+    const int count = static_cast<int>(sysconf(_SC_NPROCESSORS_CONF));
+    std::vector<long> top(count, 0);
+    long slowest = 0;
+    for (int cpu = 0; cpu < count; ++cpu) {
+        char path[96];
+        std::snprintf(path, sizeof path, "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", cpu);
+        if (std::FILE *file = std::fopen(path, "r")) {
+            if (std::fscanf(file, "%ld", &top[cpu]) != 1) top[cpu] = 0;
+            std::fclose(file);
+        }
+        if (top[cpu] > 0 && (slowest == 0 || top[cpu] < slowest)) slowest = top[cpu];
+    }
+    cpu_set_t fast;
+    CPU_ZERO(&fast);
+    int chosen = 0;
+    for (int cpu = 0; cpu < count; ++cpu) {
+        if (top[cpu] > slowest) {
+            CPU_SET(cpu, &fast);
+            ++chosen;
+        }
+    }
+    if (chosen == 0) return; // (all alike, or unknown)
+    if (sched_setaffinity(0, sizeof fast, &fast) == 0)
+        std::fprintf(stderr, "soulcalibur2: on the %d fast cores of %d\n", chosen, count);
+}
+
 static void reportCrashes()
 {
     static char stack[64 * 1024];
@@ -132,6 +167,28 @@ void sc2_android_start()
         toSystemLog();
     }
     reportCrashes();
+    fastCores();
+    recomp_host_pump_start();
+}
+
+// The game's speed in its log every ten seconds: frames begun and the longest between two (a phone's own speed,
+// for reports)
+extern "C" void sc2_android_frame(void)
+{
+    static uint64_t window_start = 0, last = 0, longest = 0;
+    static unsigned frames = 0;
+    const uint64_t now = SDL_GetTicksNS();
+    if (last != 0) longest = std::max(longest, now - last);
+    last = now;
+    ++frames;
+    if (window_start == 0) window_start = now;
+    if (now - window_start >= 10000000000ull) {
+        std::fprintf(stderr, "soulcalibur2 speed: %.1f frames a second, longest frame %.1f ms\n",
+            frames * 1e9 / double(now - window_start), longest / 1e6);
+        window_start = now;
+        frames = 0;
+        longest = 0;
+    }
 }
 
 bool sc2_android_start_again(const std::vector<std::string> &args)
