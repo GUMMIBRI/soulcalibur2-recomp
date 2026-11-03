@@ -245,7 +245,11 @@ void GuestPage(launcher::PageContext &page) {
                                                    : std::filesystem::u8path(discs[g]).filename().u8string();
         const std::string detail = std::string(guest.name) + ": Soulcalibur II (USA) for the " + guest.disc +
             (g == 0 ? ", as a disc image (.iso, .gcm or .ciso)." : ", as a disc image (.iso).") +
+#ifdef __ANDROID__
+            " Choose it: it is copied into the app's folder.";
+#else
             " Drop it on this window or choose it.";
+#endif
         row(page.width, label.c_str(), detail.c_str(), 110, 36, [&] {
             if (ui::button(g == 0 ? "Choose…##gc" : "Choose…##ps2", Kind::Secondary, 110.0f, !s.dialog))
                 choose_disc(page, g);
