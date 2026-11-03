@@ -7,6 +7,9 @@
   you choose are copied into the app's folder.
 - **Character select centred with the guests**: the grid, which the guests' fifth column made half a column
   wider on the right, is centred again, clear of player 2's model.
+- **Character select in rows of five** ([#6](https://github.com/tmcleroy/soulcalibur2-recomp/issues/6)): with the
+  guests, the 25 characters fill five rows of five, Link and Heihachi beside Spawn, and Random sits alone under the
+  middle column. Down from the bottom of any column, or Up from the top row, goes to Random.
 
 ## 0.1.0-beta.2
 

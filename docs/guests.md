@@ -280,9 +280,26 @@ of these tables:
 | 0x1A07F0 | allowed in each mode |
 | 0x17A7C8 | grid cell |
 
-The guests go in the grid's empty fifth column: Link in cell 4, Heihachi in cell
-9. Their rows in the 24-character roster index (0x19CA20) are left alone, so the
+The grid (0x17A390) is 5 columns of 6 cells of 36 bytes; the Xbox fills four
+columns, Random in cell 26. The guests first go in the empty fifth column (Link
+in cell 4, Heihachi in cell 9), then the grid is laid out again in rows of five
+(sc2_guest.cpp, `BalanceGrid`): every character in reading order, the guests
+after Spawn, 25 characters in five full rows. Random keeps cell 26, which the
+program names in several places (0x688E0, 0x6B000, 0x6B380, 0x6B530); it is
+drawn under the middle column (`cell_place`). Each character's cell (0x17A7C8)
+follows; IDs the grid does not show point at cell 29, empty in every layout.
+Their rows in the 24-character roster index (0x19CA20) are left alone, so the
 save layout does not change.
+
+The cursor's move is 0x6B000(player, pressed), the cursor's vtable entry +0x20
+(vtable 0x17AF70; the cell at +8, the cells it may take +4 to +6, live while
++0x14): Up and Down go five cells, Left and Right one, each wrapping in its
+column or row and passing over empty cells and locked ones (the cell's check
+routine at +4 says no). `cursor_move` (sc2_hooks.c) sends Down from a column's
+lowest open cell, and Up from its highest, to Random, and from Random Up and
+Down into the middle column; it sets the cell through 0x6B380(player, cell),
+which moves the cells' highlights, and the original runs on without the
+vertical press (its return, the new cell, is how the caller sounds the move).
 
 As its own character, Link gets his own profile and the GameCube's weapon-bone
 case (0xd, 9, 3, 9, 9, 9, 0xd, 0xd). The shield is then on his arm and the

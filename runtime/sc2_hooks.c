@@ -22,6 +22,7 @@ extern void sub_0003BED0(void);
 extern void sub_000502A0(void);
 extern void sub_0002ABC0(void);
 extern void sub_0006A190(void);
+extern void sub_0006B000(void);
 extern void sub_000331B0(void);
 extern void sub_0002ED80(void);
 extern void sub_0002EC90(void);
@@ -209,11 +210,73 @@ static void sprite_draw(void)
 static void cell_place(void)
 {
     const uint32_t position = *recomp_memory_u32(recomp_runtime.registers.esp + 4u);
+    const uint32_t cell = *recomp_memory_u32(recomp_runtime.registers.esp + 8u);
     sub_0006A190();
     if (!sc2_guest_fifth_column()) return;
     float *f = (float *)recomp_memory(position, 4u), step;
     memcpy(&step, recomp_memory(0x0017774Cu, 4u), 4u);
     *f -= step * 0.5f;
+    /* (with the grid in rows of five, Random, cell 26 in the second column, stands alone under the middle one) */
+    if (cell == 26u && sc2_select_grid_balanced()) *f += step;
+}
+
+/* 0x6B000(player, pressed), a select cursor's move (thiscall: the cursor's cell at +8, the cells it may take +4 to
+   +6, live while +0x14). Up and Down go five cells (a column), Left and Right one (a row), each wrapping and passing
+   over empty and locked cells. With the grid in rows of five (sc2_guest.cpp, BalanceGrid), Random (cell 26) stands
+   alone under the middle column: Down from the lowest character a column has, or Up from the highest, goes to it,
+   and from it Up and Down go into the middle column, as on the screen. The cell changes through 0x6B380 (the cells'
+   highlights with it), and the original then runs without the vertical press (Left and Right, the cursor's place,
+   and its return, by which the caller sounds the move). */
+enum { CELL_RANDOM = 26, PAD_UP = 0x2000u, PAD_DOWN = 0x1000u };
+
+static bool cell_open(int cell)
+{
+    const uint32_t at = *recomp_memory_u32(0x003CA00Cu) + 36u * (uint32_t)cell;
+    const int16_t character = *(const int16_t *)recomp_memory(at, 2u);
+    const uint32_t check = *recomp_memory_u32(at + 4u);
+    if (character == -1) return false;
+    if (!check) return true;
+    const RecompRegisters saved = recomp_runtime.registers;
+    const uint32_t args[2] = {(uint32_t)(int32_t)character, 0u};
+    kernel_call_guest(check, args, 2u);
+    const bool open = (recomp_runtime.registers.eax & 0xffu) != 0u;
+    recomp_runtime.registers = saved;
+    return open;
+}
+
+/* The first open cell from `cell` on in steps of `step` while in the five rows, or -1 */
+static int open_in_column(int cell, int step)
+{
+    for (; cell >= 0 && cell < 25; cell += step)
+        if (cell_open(cell)) return cell;
+    return -1;
+}
+
+static void cursor_move(void)
+{
+    const uint32_t esp = recomp_runtime.registers.esp, cursor = recomp_runtime.registers.ecx;
+    const uint32_t player = *recomp_memory_u32(esp + 4u), pressed = *recomp_memory_u32(esp + 8u);
+    const int16_t *c = (const int16_t *)recomp_memory(cursor + 4u, 0x12u);   /* +4 first, +6 last, +8 cell, +0x14 live */
+    if (!sc2_select_grid_balanced() || !c[8] || c[0] != 0 || c[1] < 29 || !(pressed & (PAD_UP | PAD_DOWN))) {
+        sub_0006B000();
+        return;
+    }
+    const int cell = c[2];
+    int to = -1;
+    if (pressed & PAD_UP)
+        to = cell == CELL_RANDOM ? open_in_column(22, -5) : open_in_column(cell - 5, -5) < 0 ? CELL_RANDOM : -1;
+    else
+        to = cell == CELL_RANDOM ? open_in_column(2, 5) : open_in_column(cell + 5, 5) < 0 ? CELL_RANDOM : -1;
+    if (to < 0 || to == cell) {
+        sub_0006B000();
+        return;
+    }
+    const RecompRegisters saved = recomp_runtime.registers;
+    const uint32_t args[2] = {player, (uint32_t)to};
+    kernel_call_guest(0x0006B380u, args, 2u);   /* (thiscall: ECX the cursor, as on entry) */
+    recomp_runtime.registers = saved;
+    *recomp_memory_u32(esp + 8u) = pressed & ~(uint32_t)(PAD_UP | PAD_DOWN);
+    sub_0006B000();
 }
 
 uint32_t sc2_net_seed;
@@ -464,6 +527,7 @@ RecompFunction recomp_sc2_hooks_lookup_manual(uint32_t address)
     case 0x000502a0u: return scene_switch;
     case 0x0002abc0u: return sprite_draw;
     case 0x0006a190u: return cell_place;
+    case 0x0006b000u: return cursor_move;
     case 0x000566f0u: return weapon_item;
     case 0x000c4940u: return play_counted;
     case 0x00036a70u: return roster_place;
