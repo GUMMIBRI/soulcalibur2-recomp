@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Character select centred with the guests**: the grid, which the guests' fifth column made half a column
+  wider on the right, is centred again, clear of player 2's model.
+
 ## 0.1.0-beta.2
 
 The first public release. Online play is smoother and easier to start: fights run at full speed on a Steam Deck, a host keeps playing while waiting for someone to join, and joining explains itself when the two players' guests differ. Also new: RetroArch's CRT and scanline shaders. Both players need this version to play each other online, and guests built by beta.1 should be rebuilt (the launcher's Guest page asks).
