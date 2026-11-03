@@ -127,8 +127,58 @@ static void fastCores()
         std::fprintf(stderr, "soulcalibur2: on the %d fast cores of %d\n", chosen, count);
 }
 
-// (Not the fastest core alone: a phone caps that one first when it warms, below the next ones, and the game was then
-// held on it. On the fast cores the system moves it to whichever is quickest at the time.)
+// (Not the fastest core alone by default: a phone caps that one first when it warms, below the next ones, and the
+// game was then held on it. On the fast cores the system moves it to whichever is quickest at the time.
+// SC2_FASTEST_CORE=1, for measuring: from the first frame the game's thread on the fastest core alone.)
+static void fastestCore()
+{
+    const int count = static_cast<int>(sysconf(_SC_NPROCESSORS_CONF));
+    long fastest = 0;
+    std::vector<long> top(count, 0);
+    for (int cpu = 0; cpu < count; ++cpu) {
+        char path[96];
+        std::snprintf(path, sizeof path, "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", cpu);
+        if (std::FILE *file = std::fopen(path, "r")) {
+            if (std::fscanf(file, "%ld", &top[cpu]) != 1) top[cpu] = 0;
+            std::fclose(file);
+        }
+        fastest = std::max(fastest, top[cpu]);
+    }
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    int chosen = 0;
+    for (int cpu = 0; cpu < count; ++cpu) {
+        if (fastest > 0 && top[cpu] == fastest) {
+            CPU_SET(cpu, &set);
+            ++chosen;
+        }
+    }
+    if (chosen > 0 && chosen < count && sched_setaffinity(0, sizeof set, &set) == 0)
+        std::fprintf(stderr, "soulcalibur2: the game's thread on the fastest core (SC2_FASTEST_CORE)\n");
+}
+
+// The cores' speed caps now (a warm phone lowers them), for the speed line
+static std::string coreCaps()
+{
+    std::string caps;
+    const int count = static_cast<int>(sysconf(_SC_NPROCESSORS_CONF));
+    long previous = -1;
+    for (int cpu = 0; cpu < count; ++cpu) {
+        char path[96];
+        std::snprintf(path, sizeof path, "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_max_freq", cpu);
+        long cap = 0;
+        if (std::FILE *file = std::fopen(path, "r")) {
+            if (std::fscanf(file, "%ld", &cap) != 1) cap = 0;
+            std::fclose(file);
+        }
+        if (cap == previous) continue; // (a cluster's cores share one)
+        previous = cap;
+        char one[32];
+        std::snprintf(one, sizeof one, "%scpu%d %.2f", caps.empty() ? "" : ", ", cpu, cap / 1e6);
+        caps += one;
+    }
+    return caps + " GHz";
+}
 
 static void reportCrashes()
 {
@@ -181,16 +231,22 @@ extern "C" void sc2_android_frame(void)
 {
     static uint64_t window_start = 0, last = 0, longest = 0;
     static unsigned long long gaps_before = 0;
+    static bool first_frame = true;
     static unsigned frames = 0;
     const uint64_t now = SDL_GetTicksNS();
     if (last != 0) longest = std::max(longest, now - last);
     last = now;
     ++frames;
     if (window_start == 0) window_start = now;
+    if (first_frame) {
+        first_frame = false;
+        if (const char *pin = std::getenv("SC2_FASTEST_CORE"); pin != nullptr && *pin == '1') fastestCore();
+    }
     if (now - window_start >= 10000000000ull) {
         const unsigned long long gaps = recomp_audio_output_underruns();
-        std::fprintf(stderr, "soulcalibur2 speed: %.1f frames a second, longest frame %.1f ms, sound gaps %llu\n",
-            frames * 1e9 / double(now - window_start), longest / 1e6, gaps - gaps_before);
+        std::fprintf(stderr, "soulcalibur2 speed: %.1f frames a second, longest frame %.1f ms, sound gaps %llu "
+            "(caps %s)\n", frames * 1e9 / double(now - window_start), longest / 1e6, gaps - gaps_before,
+            coreCaps().c_str());
         gaps_before = gaps;
         window_start = now;
         frames = 0;
