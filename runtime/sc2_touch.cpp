@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Controls on a touch screen (a phone), sc2_touch.h: a stick at the left, the four attack buttons at the right as
 // the Xbox pad has them (Y vertical at the top, X horizontal at the left, B kick at the right, A guard at the
-// bottom), Start at the top right and the menu at the top left. They are a virtual SDL gamepad, so the game sees
+// bottom) with a throw (A+G) beside them, Start at the top right and the menu at the top left. They are a virtual SDL gamepad, so the game sees
 // them as it sees a pad (the player's button layout, the in-game menu's Back and its d-pad and A and B). The layout
 // follows cps2recomp's port/touch.cpp: in the window's side bars where the picture leaves room.
 //
@@ -28,6 +28,7 @@ struct Control {
     SDL_GamepadButton button;
     float x, y, radius; // in the window's pixels
     ImU32 colour;
+    SDL_GamepadButton also = SDL_GAMEPAD_BUTTON_INVALID; // a second button it presses with the first (A+G)
     unsigned pressed = 0;     // the frame its finger came down in
     bool release_due = false; // its finger is up, its button not yet
 };
@@ -64,10 +65,31 @@ void set_button(SDL_GamepadButton button, bool down)
     if (virtual_pad != nullptr) SDL_SetJoystickVirtualButton(virtual_pad, button, down);
 }
 
+// A pad button is held while any control that presses it is (G alone and A+G together share G)
+int held_count[SDL_GAMEPAD_BUTTON_COUNT];
+
+void press(SDL_GamepadButton button, bool down)
+{
+    if (button == SDL_GAMEPAD_BUTTON_INVALID) return;
+    int &count = held_count[button];
+    if (down && count++ == 0) set_button(button, true);
+    else if (!down && count > 0 && --count == 0) set_button(button, false);
+}
+
+void press_control(const Control &c, bool down)
+{
+    press(c.button, down);
+    press(c.also, down);
+}
+
 void layout(int w, int h)
 {
     if (w == width && h == height) return;
-    for (const Control &c : controls) set_button(c.button, false); // (a new layout: nothing held over)
+    // (a new layout: nothing held over)
+    for (int b = 0; b < SDL_GAMEPAD_BUTTON_COUNT; ++b) {
+        if (held_count[b] > 0) set_button(static_cast<SDL_GamepadButton>(b), false);
+        held_count[b] = 0;
+    }
     width = w;
     height = h;
     const float unit = static_cast<float>(h) / 100.0f;
@@ -84,6 +106,9 @@ void layout(int w, int h)
         {"A", SDL_GAMEPAD_BUTTON_WEST, cx - gap, cy, r, IM_COL32(80, 160, 250, 255)},  // X: horizontal
         {"K", SDL_GAMEPAD_BUTTON_EAST, cx + gap, cy, r, IM_COL32(240, 80, 80, 255)},   // B: kick
         {"G", SDL_GAMEPAD_BUTTON_SOUTH, cx, cy + gap, r, IM_COL32(90, 210, 120, 255)}, // A: guard
+        // (a throw, A and G at once, in the diamond's empty lower left)
+        {"A+G", SDL_GAMEPAD_BUTTON_WEST, cx - gap * 1.45f, cy + gap * 1.45f, r * 0.8f, IM_COL32(170, 140, 240, 255),
+            SDL_GAMEPAD_BUTTON_SOUTH},
         {"Start", SDL_GAMEPAD_BUTTON_START, w - margin - 6.0f * unit, margin + 4.0f * unit, 5.0f * unit,
             IM_COL32(200, 200, 210, 255)},
         {"Menu", SDL_GAMEPAD_BUTTON_BACK, margin + 6.0f * unit, margin + 4.0f * unit, 5.0f * unit,
@@ -163,10 +188,8 @@ void release(int control)
         stick_to(stick_x, stick_y);
         return;
     }
-    for (const auto &other : fingers) // (held while another finger is on it)
-        if (other.second == control) return;
     if (frame - controls[control].pressed < kMinHoldFrames) controls[control].release_due = true;
-    else set_button(controls[control].button, false);
+    else press_control(controls[control], false);
 }
 
 void apply(const Touch &touch)
@@ -187,7 +210,7 @@ void apply(const Touch &touch)
         } else {
             controls[control].pressed = frame;
             controls[control].release_due = false;
-            set_button(controls[control].button, true);
+            press_control(controls[control], true);
         }
         return;
     }
@@ -274,7 +297,7 @@ void sc2_touch_draw(float w, float h)
     for (Control &c : controls) {
         if (c.release_due && frame - c.pressed >= kMinHoldFrames) {
             c.release_due = false;
-            set_button(c.button, false);
+            press_control(c, false);
         }
     }
     if (!shown || (SDL_GetTicks() - touched >= kIdleMs && fingers.empty())) return;

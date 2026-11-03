@@ -41,7 +41,8 @@ F11 switches full screen. Start, A, B, Return or Space skips the logos and the o
 
 On Android, a touch shows the touch controls: a stick at the left (it comes to where your thumb lands), the four
 attack buttons at the right in the Xbox pad's places and colours (B vertical at the top, A horizontal at the left, K
-kick at the right, G guard at the bottom), Start at the top right and Menu at the top left. They are player 1's pad,
+kick at the right, G guard at the bottom) with A+G (a throw, both at once) beside G, Start at the top right and Menu
+at the top left. They are player 1's pad,
 so the Controllers page's layout applies to them too, and they work the in-game menu (the stick moves, G chooses, K
 goes back). They fade after five seconds untouched and go when a key is pressed; a gamepad works beside them.
 Android's Back button opens the in-game menu.

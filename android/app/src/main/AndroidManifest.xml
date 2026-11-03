@@ -32,6 +32,8 @@
         android:enableOnBackInvokedCallback="false"
         android:extractNativeLibs="true"
         android:hardwareAccelerated="true">
+        <!-- (adb's profilers may sample the app, as on a computer; nothing else changes) -->
+        <profileable android:shell="true" />
         <!-- The back button reaches the launcher and the games (Back, the game's menu) instead of closing them. -->
         <meta-data android:name="SDL_ENV.SDL_ANDROID_TRAP_BACK_BUTTON" android:value="1" />
         <!-- Landscape, either way up: SDL otherwise lets a resizable window turn with the phone -->
