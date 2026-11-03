@@ -49,6 +49,10 @@ android {
             assets.srcDirs = ["${stagedDir}/assets"]
         }
     }
+    androidResources {
+        // (a development build's packed disc and guests, tools/release/android.sh GAME_DISC: stored as they are)
+        noCompress 'iso', 'olk'
+    }
     packagingOptions {
         jniLibs {
             // Compressed libraries, unpacked when the app is installed: a smaller APK, and the launcher finds each

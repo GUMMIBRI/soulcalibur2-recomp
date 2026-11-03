@@ -9,6 +9,11 @@
 #   sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;27.2.12479018"
 #   tools/release/android.sh
 #
+#   GAME_DISC=<disc image> [GUESTS=<guests-root.olk>] tools/release/android.sh
+#       a development build with your own disc image (and the guests built from your other discs) packed in, to try
+#       on your own phone: the app unpacks them into its folder the first time it opens and sets the launcher to
+#       them. build/Soulcalibur2Recomp-android-with-game-DO-NOT-SHARE.apk; never share it.
+#
 # Signing: with KEYSTORE, KEYSTORE_PASSWORD, KEY_ALIAS and KEY_PASSWORD the APK is signed with that key. They are also
 # read from the file SIGNING names (default ~/.config/soulcalibur2-recomp/android-signing.env, outside the repository),
 # as lines of NAME="value". Without either it is signed with the Android debug key, which is fine for sideloading your
@@ -22,6 +27,10 @@ SDL_SHA256=7322236cd12090c3eb40b9728be4d49c76f66ad17d04369584d4ecad5cf77c68
 SIGNING="${SIGNING:-$HOME/.config/soulcalibur2-recomp/android-signing.env}"
 if [ -z "${KEYSTORE:-}" ] && [ -f "$SIGNING" ]; then
     . "$SIGNING"
+fi
+if [ -n "${RELEASE:-}" ] && [ -n "${GAME_DISC:-}" ]; then
+    echo "error: a release APK can't have the game packed in" >&2
+    exit 1
 fi
 if [ -n "${RELEASE:-}" ] && [ -z "${KEYSTORE:-}" ]; then
     echo "error: a release APK needs the signing key ($SIGNING)" >&2
@@ -85,10 +94,21 @@ cp -R "$root/docs/licenses/." "$staged/assets/licenses/"
 cp -R "$("$root/tools/shaders.sh")" "$staged/assets/shaders"
 
 apk="$root/build/Soulcalibur2Recomp-android.apk"
+if [ -n "${GAME_DISC:-}" ]; then
+    # (LauncherActivity.java unpacks assets/game/; links, not copies: they are gigabytes)
+    mkdir -p "$staged/assets/game"
+    ln -s "$(cd "$(dirname "$GAME_DISC")" && pwd)/$(basename "$GAME_DISC")" "$staged/assets/game/disc.iso"
+    if [ -n "${GUESTS:-}" ]; then
+        ln -s "$(cd "$(dirname "$GUESTS")" && pwd)/$(basename "$GUESTS")" "$staged/assets/game/guests-root.olk"
+        [ -f "$GUESTS.version" ] && cp "$GUESTS.version" "$staged/assets/game/guests-root.olk.version"
+    fi
+    apk="$root/build/Soulcalibur2Recomp-android-with-game-DO-NOT-SHARE.apk"
+    echo "packing $GAME_DISC${GUESTS:+ and $GUESTS}: a development build, not to be shared"
+fi
 set -- -PstagedDir="$staged" -PsdlDir="$sdl"
 if [ -n "${KEYSTORE:-}" ]; then
     set -- "$@" -PkeyStore="$KEYSTORE" -PkeyStorePassword="$KEYSTORE_PASSWORD" -PkeyAlias="$KEY_ALIAS" -PkeyPassword="$KEY_PASSWORD"
 fi
 (cd "$root/android" && ./gradlew --console=plain -q assembleRelease "$@")
-cp "$root/android/app/build/outputs/apk/release/app-release.apk" "$apk"
+mv "$root/android/app/build/outputs/apk/release/app-release.apk" "$apk"
 echo "built $apk ($(du -h "$apk" | cut -f1))"

@@ -43,6 +43,100 @@ public class LauncherActivity extends SDLActivity {
         return new String[] {"SDL3", "soulcalibur2-launcher"};
     }
 
+    @Override
+    protected void onCreate(android.os.Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        unpackGame();
+    }
+
+    // A development build's own disc image and guests (tools/release/android.sh GAME_DISC: assets/game/), copied into
+    // the launcher's folder once, away from the activity's thread (they are gigabytes), and the launcher set to them;
+    // then the launcher starts again to find them
+    private void unpackGame() {
+        final String[] files;
+        try {
+            files = getAssets().list("game");
+        } catch (Exception e) {
+            return;
+        }
+        if (files == null || files.length == 0) {
+            return;
+        }
+        final File home = new File(getExternalFilesDir(null), "Soulcalibur II");
+        final File done = new File(home, "imported/.packed-" + packedVersion());
+        if (done.exists()) {
+            return;
+        }
+        android.widget.Toast.makeText(this, "Unpacking the game files packed in this build (a minute or two); "
+            + "the launcher starts again when done", android.widget.Toast.LENGTH_LONG).show();
+        new Thread(() -> {
+            try {
+                File imported = new File(home, "imported");
+                File guest = new File(home, "guest");
+                imported.mkdirs();
+                guest.mkdirs();
+                for (String name : files) {
+                    File to = new File(name.equals("disc.iso") ? imported : guest, name);
+                    File partial = new File(to.getPath() + ".part");
+                    try (InputStream in = getAssets().open("game/" + name); OutputStream out = new FileOutputStream(partial)) {
+                        byte[] buffer = new byte[1 << 20];
+                        for (int got; (got = in.read(buffer)) > 0;) {
+                            out.write(buffer, 0, got);
+                        }
+                    }
+                    to.delete();
+                    partial.renameTo(to);
+                }
+                // (launcher.ini: the game's disc, in its [game] section; the rest of the file kept)
+                File ini = new File(home, "launcher.ini");
+                String text = ini.exists() ? new String(java.nio.file.Files.readAllBytes(ini.toPath()),
+                    java.nio.charset.StandardCharsets.UTF_8) : "";
+                String disc = "disc=" + new File(imported, "disc.iso").getPath();
+                StringBuilder out = new StringBuilder();
+                boolean inGame = false, written = false;
+                for (String line : text.split("\n", -1)) {
+                    if (line.startsWith("[")) {
+                        if (inGame && !written) {
+                            out.append(disc).append('\n');
+                            written = true;
+                        }
+                        inGame = line.trim().equals("[game]");
+                    } else if (inGame && line.startsWith("disc=")) {
+                        if (!written) {
+                            out.append(disc).append('\n');
+                            written = true;
+                        }
+                        continue;
+                    }
+                    out.append(line).append('\n');
+                }
+                if (!written) {
+                    out.append(inGame ? "" : "[game]\n").append(disc).append('\n');
+                }
+                java.nio.file.Files.write(ini.toPath(), out.toString().replaceAll("\n+$", "\n")
+                    .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                done.createNewFile();
+                Log.v("soulcalibur2", "unpacked the packed game files");
+                // (the launcher again, in a new process: it reads launcher.ini when it starts)
+                Intent again = getPackageManager().getLaunchIntentForPackage(getPackageName());
+                again.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                startActivity(again);
+                System.exit(0);
+            } catch (Exception e) {
+                Log.w("soulcalibur2", "the packed game files: " + e);
+            }
+        }).start();
+    }
+
+    // This install's time, so a new build's files are unpacked again
+    private long packedVersion() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).lastUpdateTime;
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
     // Starts the game whose library is lib<library>.so, with these arguments, in its folder, its output to log
     public boolean startGame(String library, String[] arguments, String folder, String log) {
         final Intent intent = new Intent(this, SLOTS[nextSlot]);
