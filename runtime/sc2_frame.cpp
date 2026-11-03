@@ -86,9 +86,16 @@ bool StateSaved(int slot) { return slot >= 1 && slot <= kStateSlots && slots[slo
 
 extern "C" void (*sc2_net_frame)(void) = nullptr;
 
+#ifdef __ANDROID__
+extern "C" void sc2_android_frame(void); // (sc2_android.cpp: the log's speed line)
+#endif
+
 extern "C" void sc2_frame_begins(void)
 {
     sc2_frame_thread = recomp_kernel_current_thread_id();
+#ifdef __ANDROID__
+    sc2_android_frame();
+#endif
     if (sc2_net_frame != nullptr) {
         sc2_net_frame();
         return;

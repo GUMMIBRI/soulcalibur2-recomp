@@ -8,8 +8,8 @@
 Spawn, on the GameCube with Link and on the PlayStation 2 with Heihachi, and none of those releases had more than
 one of them. This port has all three on the same select screen, in every mode, against each other.
 
-**An unofficial native port of Soulcalibur II (Xbox) for macOS, Linux (Steam Deck and Steam Machine included) and
-Windows.** It is a static recompilation of the Xbox game: its program is translated ahead of time into C and runs on
+**An unofficial native port of Soulcalibur II (Xbox) for macOS, Linux (Steam Deck and Steam Machine included),
+Windows and Android.** It is a static recompilation of the Xbox game: its program is translated ahead of time into C and runs on
 a native runtime, with no emulator. It adds a training mode, online play with rollback, a free camera with a pause,
 widescreen, higher resolutions and shaders.
 
@@ -75,6 +75,8 @@ steps a frame; H (or Black) hides the life bars and timer; F12 saves a screensho
   take one over).
 - **An in-game menu** (Esc, F1 or a gamepad's Back): save states, speed, training, cheats (no damage, one-hit
   knockouts, everything unlocked), online, sound, quit.
+- **Android**: the launcher and the game in one app for 64-bit phones and tablets (Android 10 or later, Vulkan),
+  with touch controls (a stick, the four attack buttons, Start and the menu) beside any gamepad.
 - **A launcher** that checks your disc, builds the guests, sets features and both players' keys and buttons, hosts
   and joins online matches, and keeps itself up to date.
 
@@ -85,9 +87,11 @@ steps a frame; H (or Black) hides the life bars and timer; F12 saves a screensho
 ## Getting started
 
 1. Run the launcher (`Soulcalibur II Recomp.app`, `soulcalibur2-launcher` on Linux, `soulcalibur2-launcher.exe` on
-   Windows).
+   Windows, the app on Android: install `Soulcalibur2Recomp-android.apk`).
 2. On its **Game** page choose your Soulcalibur II (USA) Xbox disc image (`.iso`), or the `Default.xbe` among the
-   disc's files. It is checked, and only ever read.
+   disc's files. It is checked, and only ever read (on Android it is copied into the app's folder first). The check is of the disc's `Default.xbe` (image hashes differ
+   with the dumping tool): SHA-256 `d7c2e1fc993350821e3f7e13cfd1c9d4ba6a7bf91011005bdd1f843899efb730` as on the
+   disc, or `7ce12851850ab46766f77c612b251afe7c8bd81f879e11b4836bdf766be542c6` with extract-xiso's media patch.
 3. For the guests, choose your GameCube and/or PlayStation 2 disc on the **Guest** page; the launcher builds them
    once (a few minutes).
 4. Press **Play**.
@@ -97,7 +101,8 @@ in your user folder (`~/Library/Application Support/Soulcalibur II` on macOS, `~
 Linux), not beside the game's files.
 
 Status: Arcade, VS, Weapon Master, the Extra modes, the Museum and online play work, tested mostly on macOS; the
-Linux build runs on a Steam Machine. Windows builds but is untested.
+Linux build runs on a Steam Machine. Windows builds but is untested. Android runs in the emulator, not yet tried on a
+phone.
 
 ## Building (macOS)
 
@@ -110,7 +115,8 @@ private/venv/bin/python tools/build_game.py all
 private/venv/bin/python tools/build_game.py app   # build/Soulcalibur II Recomp.app
 ```
 
-Linux and Windows builds: `tools/release/linux.sh` and `tools/release/windows.sh` (in Docker). Generated code and
+Linux and Windows builds: `tools/release/linux.sh` and `tools/release/windows.sh` (in Docker); Android:
+`tools/release/android.sh` (the Android SDK and NDK; see the script). Generated code and
 everything taken from the disc stay in `private/`, which git ignores. How the port works is in [docs](docs/README.md).
 
 ## Credits

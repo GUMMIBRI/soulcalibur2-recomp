@@ -2,7 +2,8 @@
 // The Guest page: the other versions' guests beside Spawn. Link is built from the player's GameCube disc and
 // Heihachi from their PlayStation 2 disc (guest/build.h, build_guests_root), into one file in the player's folder
 // (guest/guests-root.olk) that the game reads in place of the Xbox disc's root.olk (--guests): they then stand
-// in the select grid's fifth column. The discs are only read.
+// in the select grid's fifth column. The discs are only read (on Android, copied into the app's folder first: the
+// system's picker gives documents, not files).
 
 #include "guest_page.h"
 
@@ -21,6 +22,13 @@
 #include <string>
 #include <system_error>
 #include <thread>
+
+#ifdef __ANDROID__
+#include <SDL3/SDL.h>
+#include <jni.h>
+
+#include <sstream>
+#endif
 
 std::mutex g_disc_image_lock;
 
@@ -45,6 +53,7 @@ struct State {
     std::string picked;              // a disc the dialog gave, for the page to take
     int picked_for = 0;
     std::atomic<bool> dialog{false};
+    std::atomic<bool> copying{false};   // (Android: the chosen disc being copied into the app's folder)
     std::atomic<bool> building{false};
     std::atomic<int> done{0}, total{1};
     std::string error;               // the last build's, or ""
@@ -130,10 +139,65 @@ void take(launcher::PageContext &page, int guest, const std::string &path) {
     page.prefs.save();
 }
 
+#ifdef __ANDROID__
+// The system's picker, and the disc chosen copied into `folder` by the app's activity (LauncherActivity.importFiles,
+// as the Game page has its disc copied): the copy's path, or "" (on a thread of the caller's: it waits for the player
+// and the copy)
+std::string import_disc(const std::filesystem::path &folder) {
+    std::error_code error;
+    std::filesystem::create_directories(folder, error);
+    JNIEnv *env = static_cast<JNIEnv *>(SDL_GetAndroidJNIEnv());
+    jobject activity = static_cast<jobject>(SDL_GetAndroidActivity());
+    if (!env || !activity) return {};
+    std::string path;
+    jclass activity_class = env->GetObjectClass(activity);
+    jmethodID import = env->GetMethodID(activity_class, "importFiles", "(Ljava/lang/String;Z)V");
+    jmethodID result = env->GetMethodID(activity_class, "importResult", "()Ljava/lang/String;");
+    if (import && result) {
+        jstring folder_text = env->NewStringUTF(folder.string().c_str());
+        env->CallVoidMethod(activity, import, folder_text, static_cast<jboolean>(false));
+        env->DeleteLocalRef(folder_text);
+        for (;;) {
+            SDL_Delay(100);
+            jstring text = static_cast<jstring>(env->CallObjectMethod(activity, result));
+            if (env->ExceptionCheck()) {
+                env->ExceptionClear();
+                break;
+            }
+            if (!text) continue;
+            const char *chars = env->GetStringUTFChars(text, nullptr);
+            std::istringstream lines(chars ? chars : "");
+            std::getline(lines, path);
+            env->ReleaseStringUTFChars(text, chars);
+            env->DeleteLocalRef(text);
+            break;
+        }
+    }
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    env->DeleteLocalRef(activity_class);
+    env->DeleteLocalRef(activity);
+    return path;
+}
+#endif
+
 void choose_disc(launcher::PageContext &page, int guest) {
     State &s = state();
     s.dialog = true;
     s.picked_for = guest;
+#ifdef __ANDROID__
+    s.copying = true;
+    std::thread([folder = page.folder / "guest" / "discs"] {
+        const std::string path = import_disc(folder);
+        State &st = state();
+        if (!path.empty()) {
+            std::lock_guard<std::mutex> guard(st.lock);
+            st.picked = path;
+        }
+        st.copying = false;
+        st.dialog = false;
+    }).detach();
+    return;
+#endif
     static const SDL_DialogFileFilter gamecube = {"GameCube disc image", "iso;gcm;ciso"};
     static const SDL_DialogFileFilter ps2 = {"PlayStation 2 disc image", "iso"};
     SDL_ShowOpenFileDialog(
@@ -181,7 +245,11 @@ void GuestPage(launcher::PageContext &page) {
                                                    : std::filesystem::u8path(discs[g]).filename().u8string();
         const std::string detail = std::string(guest.name) + ": Soulcalibur II (USA) for the " + guest.disc +
             (g == 0 ? ", as a disc image (.iso, .gcm or .ciso)." : ", as a disc image (.iso).") +
+#ifdef __ANDROID__
+            " Choose it: it is copied into the app's folder.";
+#else
             " Drop it on this window or choose it.";
+#endif
         row(page.width, label.c_str(), detail.c_str(), 110, 36, [&] {
             if (ui::button(g == 0 ? "Choose…##gc" : "Choose…##ps2", Kind::Secondary, 110.0f, !s.dialog))
                 choose_disc(page, g);
@@ -191,7 +259,8 @@ void GuestPage(launcher::PageContext &page) {
     std::string status;
     {
         std::lock_guard<std::mutex> guard(s.lock);
-        if (s.building) status = "Converting…";
+        if (s.copying) status = "Copying the disc you chose into the app's folder…";
+        else if (s.building) status = "Converting…";
         else if (!s.error.empty()) status = "It could not be built: " + s.error;
         else if (built && guest::guests_version(built_file(page.folder).u8string()) != guest::GUESTS_VERSION)
             status = "Built by an earlier release: press Rebuild. Until then the guests may lack what this release "

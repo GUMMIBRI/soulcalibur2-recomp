@@ -42,6 +42,7 @@ enum class Guest { Spawn, Link, Heihachi };
 Guest g_guest = Guest::Spawn;
 bool g_roster_link = false;   /* Link as character 27 (ApplyGuestRoster) */
 bool g_roster_column = false; /* a guest in the grid's fifth column */
+bool g_grid_balanced = false; /* the grid laid out in rows of five (BalanceGrid) */
 int g_hires_pictures = 20;    /* the Art Gallery's Hi-Res pictures (sc2_guest_hires_pictures) */
 bool g_guest_loaded[2];       /* Link, Heihachi in the guests' file (sc2_guest_loaded) */
 bool g_profile_item[2];       /* ... with their profile items, 48 and 49 (sc2_guest_profile_item) */
@@ -179,6 +180,48 @@ static void ApplyGallery(bool link, bool heihachi)
     }
 }
 
+/* The grid in rows of five (issue #6). The guests are first put in the fifth column (cells 4 and 9); here every
+   character is laid out again in reading order, five to a row, the guests after Spawn: 25 characters fill five
+   rows. Random keeps cell 26 (the program names it there in several places), alone in the sixth row; it is drawn
+   under the middle column and the cursor reaches it from the bottom of any column (sc2_hooks.c, cell_place and
+   cursor_move). Each character's cell (0x17A7C8) follows; a character the grid does not show (the IDs that pointed
+   at the empty cell 19) points at cell 29, empty in every layout. */
+static void BalanceGrid()
+{
+    constexpr int kCells = 30, kRandom = 26, kNowhere = 29;
+    uint8_t cells[kCells][36];
+    std::memcpy(cells, recomp_memory(kGrid, sizeof cells), sizeof cells);
+    auto character = [&](int cell) { int16_t c; std::memcpy(&c, cells[cell], 2); return int(c); };
+    std::vector<int> order, guests;
+    for (int cell = 0; cell < kCells; ++cell) {
+        const int c = character(cell);
+        if (cell == kRandom || c < 0) continue;
+        (c == 27 || c == 28 ? guests : order).push_back(cell);
+    }
+    for (size_t at = 0; at < order.size(); ++at) {
+        if (character(order[at]) != kSpawn) continue;
+        order.insert(order.begin() + long(at + 1), guests.begin(), guests.end());
+        guests.clear();
+        break;
+    }
+    order.insert(order.end(), guests.begin(), guests.end());
+    if (order.size() > size_t(kRandom - 1)) return;   /* (more than five rows: as it was) */
+
+    uint8_t laid[kCells][36] = {};
+    for (int cell = 0; cell < kCells; ++cell) {
+        const int16_t none = -1;
+        std::memcpy(laid[cell], &none, 2);
+    }
+    std::memcpy(laid[kRandom], cells[kRandom], 36);
+    for (int id = 0; id <= 32; ++id) Put<uint8_t>(kCellOf + uint32_t(id), uint8_t(kNowhere));   /* (IDs 0-32) */
+    for (size_t at = 0; at < order.size(); ++at) {
+        std::memcpy(laid[at], cells[order[at]], 36);
+        Put<uint8_t>(kCellOf + uint32_t(character(order[at])), uint8_t(at));
+    }
+    std::memcpy(recomp_memory(kGrid, sizeof laid), laid, sizeof laid);
+    g_grid_balanced = true;
+}
+
 bool ApplyGuestRoster(const char *path)
 {
     std::FILE *f = std::fopen(path, "rb");
@@ -263,6 +306,7 @@ bool ApplyGuestRoster(const char *path)
         std::fprintf(stderr, "recomp sc2: character %d from the guests' file (block %d, cell %d)\n",
                      guest.character, guest.block, guest.cell);
     }
+    if (g_roster_column) BalanceGrid();
     ApplyGallery(!profiles[0].empty(), !profiles[1].empty());   /* (Link, Heihachi) */
     /* Their profiles, items of their own: the two the game leaves empty (48, 49), as every character's profile item
        is (kind 3, the character's picture 156 + its ID; the unlock's picture at /2/297 + the item, built from the
@@ -294,6 +338,11 @@ extern "C" int sc2_guest_loaded(uint32_t character)
 extern "C" int sc2_guest_profile_item(uint32_t character)
 {
     return (character == 27u || character == 28u) && sc2::g_profile_item[character - 27u] ? int(48u + character - 27u) : -1;
+}
+
+extern "C" int sc2_select_grid_balanced(void)
+{
+    return sc2::g_grid_balanced;
 }
 
 extern "C" int sc2_guest_fifth_column(void)

@@ -40,6 +40,7 @@
 #include "sc2_hooks.h"
 #include "sc2_netplay.h"
 #include "sc2_version.h"
+#include "sc2_xbe.h"
 #include "../recomp-common/launcher/src/online.h"
 #include "sc2_online.h"
 #include "input_keyboard_win32.h"
@@ -63,6 +64,10 @@ RecompFunction recomp_program_lookup(std::uint32_t address);
 }
 
 #include <SDL3/SDL.h>
+#ifdef __ANDROID__
+#include <SDL3/SDL_main.h> /* (main is the library's SDL_main, which the activity calls) */
+#include "sc2_android.h"
+#endif
 #ifdef _WIN32
 #include <process.h>
 #else
@@ -731,9 +736,14 @@ static std::vector<std::string> runnerArgs;
     std::vector<char *> argv;
     for (std::string &arg : args) argv.push_back(arg.data());
     argv.push_back(nullptr);
-#ifdef _WIN32
+#if defined(_WIN32)
     _spawnv(_P_NOWAIT, runnerPath.c_str(), argv.data());
     std::_Exit(0);
+#elif defined(__ANDROID__)
+    /* (no program to run: the activity starts the library again in a new process) */
+    if (sc2_android_start_again(std::vector<std::string>(args.begin() + 1, args.end()))) std::_Exit(0);
+    std::fprintf(stderr, "online: the game could not start over\n");
+    std::_Exit(3);
 #else
     execv(runnerPath.c_str(), argv.data());
     std::perror("online: the game could not start over");
@@ -910,6 +920,9 @@ static bool sampleInput(std::uint32_t port, RecompInputGamepad *gamepad)
 
 int main(int argc, char **argv)
 {
+#ifdef __ANDROID__
+    sc2_android_start();
+#endif
     {
         std::error_code ignored;
         runnerPath = std::filesystem::absolute(std::filesystem::u8path(argv[0]), ignored).u8string();
@@ -1160,16 +1173,26 @@ int main(int argc, char **argv)
         std::cerr << "recomp runner: " << parsed.errors.front() << '\n';
         return 1;
     }
-    if (parsed.metadata.fileSha256 != RECOMP_XBE_SHA256) {
-        std::cerr << "recomp runner: XBE SHA-256 differs from the authenticated program target\n";
+    /* The port's media-patched copy, or the retail disc's (sc2_xbe.h). */
+    const bool retailXbe = parsed.metadata.fileSha256 == SC2_RETAIL_XBE_SHA256;
+    if (parsed.metadata.fileSha256 != RECOMP_XBE_SHA256 && !retailXbe) {
+        std::cerr << "recomp runner: XBE SHA-256 " << parsed.metadata.fileSha256
+                  << " is neither Soulcalibur II (USA) retail nor the program target\n";
         return 1;
     }
     std::vector<std::uint8_t> memory(RECOMP_XBOX_RAM_SIZE, 0u);
     std::string error;
-    // The file was authenticated by SHA-256 above; SC2's .text digest is stale (docs/bring-up.md).
+    // The file was authenticated by SHA-256 above; the patched copy's .text digest is stale (docs/bring-up.md).
     if (!recomp_load_xbe(parsed, memory, error, true)) {
         std::cerr << "recomp runner: " << error << '\n';
         return 1;
+    }
+    if (retailXbe) {
+        if (memory[SC2_MEDIA_PATCH_ADDRESS] != SC2_MEDIA_PATCH_RETAIL) {
+            std::cerr << "recomp runner: the retail XBE's media check byte is not where it should be\n";
+            return 1;
+        }
+        memory[SC2_MEDIA_PATCH_ADDRESS] = SC2_MEDIA_PATCH_BYTE;
     }
     const auto imageEnd = static_cast<std::uint64_t>(parsed.metadata.header.baseAddress) +
         parsed.metadata.header.sizeImage;

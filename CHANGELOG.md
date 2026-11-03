@@ -9,9 +9,14 @@
   thirty was shown for one refresh and the next for three, a small hitch every second or two.
 - **FPS counter**: frames shown each second in the top right corner, on the Graphics page and in the in-game menu
   (off at first).
-
+- **Android**: the launcher and the game in one app (`Soulcalibur2Recomp-android.apk`, 64-bit, Android 10 or later),
+  with touch controls that are player 1's pad and work the in-game menu; Android's Back opens the menu. The discs
+  you choose are copied into the app's folder.
 - **Character select centred with the guests**: the grid, which the guests' fifth column made half a column
   wider on the right, is centred again, clear of player 2's model.
+- **Character select in rows of five** ([#6](https://github.com/tmcleroy/soulcalibur2-recomp/issues/6)): with the
+  guests, the 25 characters fill five rows of five, Link and Heihachi beside Spawn, and Random sits alone under the
+  middle column. Down from the bottom of any column, or Up from the top row, goes to Random.
 
 ## 0.1.0-beta.2
 

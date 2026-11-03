@@ -4,6 +4,7 @@
    combo readout under the life bar, the input display below it. A note for the player goes above the hint. */
 #include "overlay_imgui_panel.h"
 #include "sc2_panel.h"
+#include "sc2_touch.h"
 
 #include "imgui.h"
 
@@ -132,6 +133,8 @@ void recomp_overlay_imgui_build(const RecompOverlayText &text, float width, floa
 {
     Sc2Panel panel;
     sc2_panel_take(&panel);
+    sc2_touch_draw(width, height);
+    if (sc2_touch_menu()) return; /* (over the in-game menu: the touch controls alone) */
     Shapes(panel, width, height);
     Meter(panel, width, height);
     Side(panel, 0, width, height);

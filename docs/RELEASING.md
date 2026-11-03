@@ -18,10 +18,16 @@ builds; a tag makes a draft release with its text and no files (`release.yml`).
      `docker run --rm -v "$PWD":"$PWD" -w "$PWD" cps2recomp-build-arm64 tools/release/windows.sh`:
      `build/Soulcalibur2Recomp-windows-x64.zip`.
 
-   Each writes its `build/update-<system>.txt`, what the launcher updates itself from. Play each before uploading.
+   - Android: `RELEASE=1 tools/release/android.sh`: `build/Soulcalibur2Recomp-android.apk`, signed with the release
+     key (`~/.config/soulcalibur2-recomp/android-signing.env`, outside the repository: KEYSTORE, KEYSTORE_PASSWORD,
+     KEY_ALIAS, KEY_PASSWORD). A published APK must carry the same key every time or it won't install over the one
+     before. It has no update manifest: the launcher sends Android's installer the newest release's APK.
+
+   Each of the others writes its `build/update-<system>.txt`, what the launcher updates itself from. Play each before
+   uploading.
 4. **Tag**: `git tag v<version> && git push origin v<version>`. The Release workflow checks the tag is `VERSION`,
    runs CI and makes the draft.
-5. **Upload** to the draft the three archives, the three `update-*.txt` and `SHA256SUMS.txt`
+5. **Upload** to the draft the three archives, the APK, the three `update-*.txt` and `SHA256SUMS.txt`
    (`cd build && shasum -a 256 Soulcalibur2Recomp-* > SHA256SUMS.txt`), and nothing else:
    `gh release upload v<version> build/Soulcalibur2Recomp-* build/update-*.txt build/SHA256SUMS.txt`.
 6. **Publish** the draft. The launcher's update looks at published releases only (pre-releases to pre-release

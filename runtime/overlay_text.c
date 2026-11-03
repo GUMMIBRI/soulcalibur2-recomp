@@ -3,6 +3,7 @@
    (sc2_panel.h): the overlay is drawn while either has something to show. */
 #include "overlay_text.h"
 #include "sc2_panel.h"
+#include "sc2_touch.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -123,6 +124,8 @@ bool sc2_panel_empty(const Sc2Panel *source)
 /* (the presenters skip drawing an empty overlay: with a panel up it is not) */
 bool recomp_overlay_empty(const RecompOverlayText *text)
 {
+    if (sc2_touch_shown()) return false;
+    if (sc2_touch_menu()) return true; /* (over the in-game menu: the touch controls alone) */
     if (text != NULL && (text->title[0] != '\0' || text->count != 0u || text->hint[0] != '\0')) return false;
     Sc2Panel now;
     sc2_panel_take(&now);
