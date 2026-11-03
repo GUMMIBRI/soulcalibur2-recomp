@@ -40,10 +40,35 @@ public class GameActivity extends SDLActivity {
             Os.setenv("RECOMP_FOLDER", text(intent.getStringExtra(EXTRA_FOLDER)), true);
             Os.setenv("RECOMP_LOG", text(intent.getStringExtra(EXTRA_LOG)), true);
             Os.setenv("SC2_SHADERS", unpackShaders().getPath(), true);
+            testVariables();
         } catch (ErrnoException e) {
             Log.w("soulcalibur2", "setenv: " + e);
         }
         super.onCreate(savedInstanceState);
+    }
+
+    // For tests: NAME=VALUE lines of env.txt in the app's folder on the shared storage (adb push), set for the game
+    // as a computer's shell would (RECOMP_QUICK_MATCH, RECOMP_D3D_FRAME_DUMP and the like), and ARGS=..., more of
+    // the program's arguments (--skip-intro). Nothing without the file.
+    private String[] testArguments = new String[0];
+
+    private void testVariables() throws ErrnoException {
+        File file = new File(getExternalFilesDir(null), "env.txt");
+        if (!file.isFile()) {
+            return;
+        }
+        try (java.io.BufferedReader lines = new java.io.BufferedReader(new java.io.FileReader(file))) {
+            for (String line; (line = lines.readLine()) != null;) {
+                int equals = line.indexOf('=');
+                if (line.startsWith("ARGS=")) {
+                    testArguments = line.substring(5).trim().split("\\s+");
+                } else if (equals > 0 && !line.startsWith("#")) {
+                    Os.setenv(line.substring(0, equals).trim(), line.substring(equals + 1).trim(), true);
+                }
+            }
+        } catch (java.io.IOException e) {
+            Log.w("soulcalibur2", "env.txt: " + e);
+        }
     }
 
     // The Shader feature's presets (runtime/sc2_settings.cpp, ShaderPreset), read as files: the app's assets/shaders/
@@ -103,7 +128,12 @@ public class GameActivity extends SDLActivity {
     @Override
     protected String[] getArguments() {
         String[] arguments = getIntent().getStringArrayExtra(EXTRA_ARGUMENTS);
-        return arguments == null ? new String[0] : arguments;
+        if (arguments == null) {
+            arguments = new String[0];
+        }
+        String[] all = java.util.Arrays.copyOf(arguments, arguments.length + testArguments.length);
+        System.arraycopy(testArguments, 0, all, arguments.length, testArguments.length);
+        return all;
     }
 
     // An HTTP request, from curl's arguments (recomp-common/launcher/src/run_program.cpp): Curl.java

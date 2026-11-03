@@ -7,6 +7,7 @@
 #ifdef __ANDROID__
 #include "sc2_android.h"
 #include "sc2_settings.h"
+#include "sc2_touch.h"
 
 #include <SDL3/SDL.h>
 #include <android/log.h>
@@ -56,6 +57,11 @@ void sc2_android_start()
     // the back button for the game (it opens the menu) instead of closing it
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
     SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
+    // SDL's systems that reach Java start here, on the activity's own thread's stack (host_call.h has the rest),
+    // and the touch screen's controls with them
+    if (!SDL_InitSubSystem(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_HAPTIC))
+        __android_log_print(ANDROID_LOG_WARN, "soulcalibur2", "SDL: %s", SDL_GetError());
+    sc2_touch_init();
     if (const char *folder = getenv("RECOMP_FOLDER"); folder && *folder) {
         if (chdir(folder) != 0) __android_log_print(ANDROID_LOG_WARN, "soulcalibur2", "no folder %s", folder);
     }

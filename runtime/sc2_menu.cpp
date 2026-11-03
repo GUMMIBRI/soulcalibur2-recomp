@@ -5,6 +5,7 @@
    (recomp_d3d_presenter_read_frame) and the presenter shows that picture
    instead. A key or button the player gave the game does only that. */
 #include "sc2_menu.h"
+#include "sc2_touch.h"
 
 #include "sc2_settings.h"
 #include "sc2_online.h"
@@ -217,18 +218,18 @@ unsigned Held()
     if (key(SDL_SCANCODE_RIGHT) || button(SDL_GAMEPAD_BUTTON_DPAD_RIGHT)) held |= recomp::kMenuRight;
     if (key(SDL_SCANCODE_RETURN) || key(SDL_SCANCODE_SPACE) || button(SDL_GAMEPAD_BUTTON_SOUTH))
         held |= recomp::kMenuConfirm;
-    if (key(SDL_SCANCODE_ESCAPE) || key(SDL_SCANCODE_BACKSPACE) || key(SDL_SCANCODE_F1) ||
+    if (key(SDL_SCANCODE_ESCAPE) || key(SDL_SCANCODE_BACKSPACE) || key(SDL_SCANCODE_F1) || key(SDL_SCANCODE_AC_BACK) ||
         button(SDL_GAMEPAD_BUTTON_EAST) || button(SDL_GAMEPAD_BUTTON_BACK) || button(SDL_GAMEPAD_BUTTON_START))
         held |= recomp::kMenuBack;
     return held;
 }
 
-/* What opens it: F1, Esc and a gamepad's Back while the game has not got them. */
+/* What opens it: F1, Esc and a gamepad's Back while the game has not got them, and Android's Back. */
 bool OpenHeld()
 {
     if (OnlineInMatch()) return false; /* (the match would wait for the menu: Esc asks to leave, runner.cpp) */
     const uint64_t pad = recomp_input_host_pad_buttons();
-    return recomp_input_scancode_held(SDL_SCANCODE_F1) ||
+    return recomp_input_scancode_held(SDL_SCANCODE_F1) || recomp_input_scancode_held(SDL_SCANCODE_AC_BACK) ||
         (escape_free && recomp_input_scancode_held(SDL_SCANCODE_ESCAPE)) ||
         (back_free && (pad >> SDL_GAMEPAD_BUTTON_BACK & 1u) != 0u);
 }
@@ -304,6 +305,7 @@ void Run(bool scripted)
     Configure();
     menu.SetSpeed(speed);
     menu.Open();
+    sc2_touch_set_menu(true);
     unsigned frames_open = 0;
     bool lobby_shown = false;
     unsigned previous = scripted ? 0u : Held(); /* the press that opened it is not a menu press */
@@ -397,6 +399,7 @@ void Run(bool scripted)
         /* (a frame's time where the swapchain does not wait, a hidden window) */
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
+    sc2_touch_set_menu(false);
     speed = menu.Speed() < 0 ? kFullSpeed : menu.Speed();
     /* The press that closed it does not reach the game. */
     for (int frames = 0; !scripted && Held() != 0u && frames < 120; ++frames) {
