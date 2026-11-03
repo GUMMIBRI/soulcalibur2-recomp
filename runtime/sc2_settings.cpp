@@ -4,6 +4,7 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 
 namespace sc2 {
@@ -137,6 +138,9 @@ const recomp::BindTable &BindingTable()
 std::string ShaderPreset(int choice, const std::string &settings_path)
 {
     if (choice >= 1 && choice <= kPresetCount) {
+        // (Android: the app unpacks its presets into a folder of its own and names it, GameActivity.java)
+        if (const char *unpacked = std::getenv("SC2_SHADERS"); unpacked != nullptr && *unpacked)
+            return std::string(unpacked) + "/" + kShaderPresets[choice - 1];
         const char *base = SDL_GetBasePath();
         return std::string(base != nullptr ? base : "") + "shaders/" + kShaderPresets[choice - 1];
     }

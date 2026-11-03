@@ -2133,7 +2133,11 @@ static void submit_draw(uint32_t primitive, uint32_t count, uint32_t vertices,
         static int reported;
         if (traced && draw->texture.data == traced_address && reported < 40) {
             void *frames[24];
+#if defined(__ANDROID__) && __ANDROID_API__ < 33
+            const int count = 0;  /* (no backtrace() before Android 13) */
+#else
             const int count = backtrace(frames, 24);
+#endif
             fprintf(stderr, "recomp texture trace %d:", reported++);
             for (int i = 2; i < count; ++i) {
                 Dl_info info;
