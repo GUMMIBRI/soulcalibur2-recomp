@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Android**: the launcher and the game in one app (`Soulcalibur2Recomp-android.apk`, 64-bit, Android 10 or later),
+  with touch controls that are player 1's pad and work the in-game menu; Android's Back opens the menu. The discs
+  you choose are copied into the app's folder.
 - **Character select centred with the guests**: the grid, which the guests' fifth column made half a column
   wider on the right, is centred again, clear of player 2's model.
 

@@ -219,9 +219,14 @@ const launcher::Description &launcher::describe() {
         d.pages = {{"Guest", GuestPage, GuestDrop, GuestBusy}};
         d.open_on_game_page = true;
         d.file_heading = "GAME FILES";
+#ifdef __ANDROID__
+        d.file_intro = "Choose your own copy of the game: an image of your Soulcalibur II (USA) Xbox disc (.iso). "
+                       "It is copied into the app's folder, where the game reads it.";
+#else
         d.file_intro = "Choose your own copy of the game: an image of your Soulcalibur II (USA) Xbox disc (.iso), "
                        "or the Default.xbe among the disc's files. It stays where it is: the launcher and the game "
                        "only read it.";
+#endif
         d.file_empty = "No game chosen. Drop your disc image (or the disc's Default.xbe) on this window or choose it.";
         d.file_not_set_up = "The game isn't set up yet. Open the launcher (without --play) once to choose your game files.";
         d.file_filter = {"Xbox disc image or Default.xbe", "iso;xiso;xbe"};

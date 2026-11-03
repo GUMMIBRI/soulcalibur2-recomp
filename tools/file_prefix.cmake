@@ -5,3 +5,10 @@
 if(SC2_SOURCE_ROOT)
     add_compile_options("-ffile-prefix-map=${SC2_SOURCE_ROOT}=.")
 endif()
+# Android: the game is a library there, and a library's calls to its own functions and reads of its own globals (the
+# translated code's registers among them) went through the dynamic linker's tables, which a program's never do: bound
+# directly, as in a program (nothing outside the library replaces them)
+if(ANDROID)
+    add_compile_options(-fno-semantic-interposition)
+    add_link_options(-Wl,-Bsymbolic)
+endif()

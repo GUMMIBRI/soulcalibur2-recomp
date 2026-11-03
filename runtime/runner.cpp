@@ -64,6 +64,10 @@ RecompFunction recomp_program_lookup(std::uint32_t address);
 }
 
 #include <SDL3/SDL.h>
+#ifdef __ANDROID__
+#include <SDL3/SDL_main.h> /* (main is the library's SDL_main, which the activity calls) */
+#include "sc2_android.h"
+#endif
 #ifdef _WIN32
 #include <process.h>
 #else
@@ -732,9 +736,14 @@ static std::vector<std::string> runnerArgs;
     std::vector<char *> argv;
     for (std::string &arg : args) argv.push_back(arg.data());
     argv.push_back(nullptr);
-#ifdef _WIN32
+#if defined(_WIN32)
     _spawnv(_P_NOWAIT, runnerPath.c_str(), argv.data());
     std::_Exit(0);
+#elif defined(__ANDROID__)
+    /* (no program to run: the activity starts the library again in a new process) */
+    if (sc2_android_start_again(std::vector<std::string>(args.begin() + 1, args.end()))) std::_Exit(0);
+    std::fprintf(stderr, "online: the game could not start over\n");
+    std::_Exit(3);
 #else
     execv(runnerPath.c_str(), argv.data());
     std::perror("online: the game could not start over");
@@ -911,6 +920,9 @@ static bool sampleInput(std::uint32_t port, RecompInputGamepad *gamepad)
 
 int main(int argc, char **argv)
 {
+#ifdef __ANDROID__
+    sc2_android_start();
+#endif
     {
         std::error_code ignored;
         runnerPath = std::filesystem::absolute(std::filesystem::u8path(argv[0]), ignored).u8string();
