@@ -38,6 +38,8 @@ typedef struct Sc2Panel {
     unsigned readout_rows[2];
     char readout[2][SC2_PANEL_READOUT_ROWS][SC2_PANEL_TEXT];
     char note[96];
+    /* The FPS counter (top right), "" when off */
+    char fps[16];
     unsigned shape_count;
     Sc2PanelShape shapes[SC2_PANEL_SHAPES];
     /* The frame meter: a row for each fighter, oldest cell first */

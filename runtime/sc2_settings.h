@@ -30,6 +30,7 @@ struct Settings {
     bool infinite_time = false;
     bool input_display = false, combo_readout = false, hit_boxes = false, frame_data = false;
     bool no_damage[2] = {false, false}, one_hit = false;   /* the cheats */
+    bool fps_counter = false;
     bool online_ping = true, online_delay = false, online_hide_names = false;   /* (sc2_online.h) */
 };
 

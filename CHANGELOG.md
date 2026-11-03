@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Resolutions up to 8x**: 5x (3200x2400), 6x (3840x2880) and 8x (5120x3840) on the Graphics page, for 4K
+  screens and fast graphics cards.
+- **Steadier on 120 Hz screens (Mac)**: the game's 60 frames a second now follow the display's refreshes, so on a
+  120 Hz (or 60, 180, 240 Hz) screen each frame stays up for the same number of refreshes. Before, about one frame in
+  thirty was shown for one refresh and the next for three, a small hitch every second or two.
+- **FPS counter**: frames shown each second in the top right corner, on the Graphics page and in the in-game menu
+  (off at first).
+
 - **Character select centred with the guests**: the grid, which the guests' fifth column made half a column
   wider on the right, is centred again, clear of player 2's model.
 

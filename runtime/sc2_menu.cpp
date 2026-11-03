@@ -65,6 +65,7 @@ int FeatureValue(const std::string &name)
     if (name == "no_damage_p1") return training.no_damage[0];
     if (name == "no_damage_p2") return training.no_damage[1];
     if (name == "one_hit") return training.one_hit;
+    if (name == "fps_counter") return training.fps_counter;
     if (name == "shader") return shader_choice;
     if (name == "dummy") return static_cast<int>(training.dummy);
     if (name == "online_ping") return online.ping;
@@ -87,6 +88,7 @@ void SetFeatureValue(const std::string &name, int value)
     else if (name == "no_damage_p1") training.no_damage[0] = value != 0;
     else if (name == "no_damage_p2") training.no_damage[1] = value != 0;
     else if (name == "one_hit") training.one_hit = value != 0;
+    else if (name == "fps_counter") training.fps_counter = value != 0;
     else if (name == "shader") SetShader(value);
     else if (name == "dummy") training.dummy = static_cast<Dummy>(value);
     else if (name == "online_ping") online.ping = value != 0;

@@ -28,6 +28,8 @@ struct Training {
     bool endless = false;
     /* The cheats */
     bool no_damage[2] = {false, false};
+    /* (not training's: the FPS counter, drawn with training's panels) */
+    bool fps_counter = false;
     bool one_hit = false;
     Dummy dummy = Dummy::Off;
 };
