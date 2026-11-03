@@ -1,25 +1,37 @@
 # Changelog
 
-## Unreleased
+## 0.2.0-beta.1
+
+Soulcalibur II on Android phones and tablets, sharper pictures for 4K screens (up to 8x the Xbox's resolution),
+steadier frames on 120 Hz Macs, an FPS counter, the character select laid out around the guests, and *Unlock
+everything* now kept in your save. Both players need this version to play each other online.
 
 - **Unlock everything is kept** ([#5](https://github.com/tmcleroy/soulcalibur2-recomp/issues/5)): the cheat
   unlocked everything only until the game was closed. The game saves its unlocks from a packed copy, which the
   cheat left as it was; it now updates that too, so the next save keeps everything.
 - **Resolutions up to 8x**: 5x (3200x2400), 6x (3840x2880) and 8x (5120x3840) on the Graphics page, for 4K
   screens and fast graphics cards.
+
+  ![Link and Heihachi at 8x (5120x3840), a part of the picture at full size](https://raw.githubusercontent.com/tmcleroy/soulcalibur2-recomp/v0.2.0-beta.1/docs/screenshots/resolution-8x.jpg)
 - **Steadier on 120 Hz screens (Mac)**: the game's 60 frames a second now follow the display's refreshes, so on a
   120 Hz (or 60, 180, 240 Hz) screen each frame stays up for the same number of refreshes. Before, about one frame in
   thirty was shown for one refresh and the next for three, a small hitch every second or two.
 - **FPS counter**: frames shown each second in the top right corner, on the Graphics page and in the in-game menu
   (off at first).
+
+  ![The FPS counter in the top right corner of a fight](https://raw.githubusercontent.com/tmcleroy/soulcalibur2-recomp/v0.2.0-beta.1/docs/screenshots/fps-counter.jpg)
 - **Android**: the launcher and the game in one app (`Soulcalibur2Recomp-android.apk`, 64-bit, Android 10 or later),
   with touch controls that are player 1's pad and work the in-game menu; Android's Back opens the menu. The discs
   you choose are copied into the app's folder.
+
+  ![Soulcalibur II on Android with the touch controls](https://raw.githubusercontent.com/tmcleroy/soulcalibur2-recomp/v0.2.0-beta.1/docs/screenshots/android-touch.jpg)
 - **Character select centred with the guests**: the grid, which the guests' fifth column made half a column
   wider on the right, is centred again, clear of player 2's model.
 - **Character select in rows of five** ([#6](https://github.com/tmcleroy/soulcalibur2-recomp/issues/6)): with the
   guests, the 25 characters fill five rows of five, Link and Heihachi beside Spawn, and Random sits alone under the
   middle column. Down from the bottom of any column, or Up from the top row, goes to Random.
+
+  ![Link and Heihachi on VS Battle's character select, the grid in rows of five](https://raw.githubusercontent.com/tmcleroy/soulcalibur2-recomp/v0.2.0-beta.1/docs/screenshots/select-link-heihachi.jpg)
 
 ## 0.1.0-beta.2
 

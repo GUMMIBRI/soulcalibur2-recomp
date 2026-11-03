@@ -34,6 +34,7 @@ An unofficial native port of Soulcalibur II (Xbox). **No game files are included
 | macOS 26 or later, Apple silicon | **Soulcalibur2Recomp-macOS.zip** |
 | Linux x86_64, Steam Deck, Steam Machine | **Soulcalibur2Recomp-linux-x86_64.tar.gz** |
 | Windows 10 or 11, 64-bit (untested) | **Soulcalibur2Recomp-windows-x64.zip** |
+| Android 10 or later, 64-bit ARM phone or tablet | **Soulcalibur2Recomp-android.apk** |
 
 \`SHA256SUMS.txt\` has the downloads' checksums. The \`update-*.txt\` files are what the launcher reads to update
 itself; you don't need them.
@@ -60,6 +61,13 @@ itself; you don't need them.
 ### Windows
 Not yet tried on a Windows machine. Extract the zip to a folder of your own (not Program Files) and open
 **soulcalibur2-launcher.exe**; Windows may say it protected your PC: **More info**, then **Run anyway**.
+
+### Android
+1. Open **Soulcalibur2Recomp-android.apk** on the phone or tablet and allow installing it (Android asks once for the
+   app you opened it from). Later releases install over it.
+2. In the launcher, choose your disc image on the **Game** page (it is copied into the app's folder, about 4.5 GB),
+   build the guests on the **Guest** page, and press **Play**. The touch controls are player 1's pad; Back opens
+   the in-game menu.
 
 In the game, Esc, F1 or a gamepad's Back opens the in-game menu. Online, both players need the same version.
 
