@@ -41,6 +41,8 @@ int sc2_guest_loaded(uint32_t character);
 int sc2_guest_profile_item(uint32_t character);
 /* Nonzero when a guest stands in the select grid's fifth column. */
 int sc2_guest_fifth_column(void);
+/* Nonzero when the select grid is laid out in rows of five, Random alone in the sixth (sc2_guest.cpp, BalanceGrid). */
+int sc2_select_grid_balanced(void);
 
 /* The Art Gallery's Hi-Res pictures: 20, or more with the guests' (sc2_guest.cpp, ApplyGallery). */
 int sc2_guest_hires_pictures(void);
