@@ -11,6 +11,9 @@
 
 #include <SDL3/SDL.h>
 #include <android/log.h>
+#include <dlfcn.h>
+#include <signal.h>
+#include <unwind.h>
 #include <fcntl.h>
 #include <jni.h>
 #include <unistd.h>
@@ -55,9 +58,50 @@ void toSystemLog()
 // would be made through Java from a guest fiber's stack and stop the game there (host_call.h)
 static SDL_AssertState SDLCALL passAssertion(const SDL_AssertData *data, void *)
 {
-    __android_log_print(ANDROID_LOG_WARN, "soulcalibur2", "SDL check failed (passed over): %s at %s:%d",
-        data->condition, data->filename, data->linenum);
+    std::fprintf(stderr, "SDL check failed (passed over): %s at %s:%d\n", data->condition, data->filename,
+        data->linenum);
     return SDL_ASSERTION_IGNORE;
+}
+
+// A crash's signal and where it was, written to the game's log (the system's own report goes only to adb logcat),
+// then the system's handling as before
+struct CrashWalk { int count; };
+static _Unwind_Reason_Code crashFrame(struct _Unwind_Context *context, void *argument)
+{
+    CrashWalk *walk = static_cast<CrashWalk *>(argument);
+    if (walk->count++ >= 40) return _URC_END_OF_STACK;
+    const uintptr_t pc = _Unwind_GetIP(context);
+    Dl_info info{};
+    if (dladdr(reinterpret_cast<void *>(pc), &info) && info.dli_fname) {
+        const char *file = std::strrchr(info.dli_fname, '/');
+        dprintf(2, "  #%02d %s+0x%zx %s\n", walk->count - 1, file ? file + 1 : info.dli_fname,
+            static_cast<size_t>(pc - reinterpret_cast<uintptr_t>(info.dli_fbase)), info.dli_sname ? info.dli_sname : "");
+    } else {
+        dprintf(2, "  #%02d 0x%zx\n", walk->count - 1, static_cast<size_t>(pc));
+    }
+    return _URC_NO_REASON;
+}
+
+static void crashed(int signal, siginfo_t *info, void *)
+{
+    dprintf(2, "soulcalibur2: crashed, signal %d at address %p\n", signal, info ? info->si_addr : nullptr);
+    CrashWalk walk{0};
+    _Unwind_Backtrace(crashFrame, &walk);
+    ::signal(signal, SIG_DFL);
+    raise(signal);
+}
+
+static void reportCrashes()
+{
+    static char stack[64 * 1024];
+    stack_t alternate{};
+    alternate.ss_sp = stack;
+    alternate.ss_size = sizeof stack;
+    sigaltstack(&alternate, nullptr);
+    struct sigaction action{};
+    action.sa_sigaction = crashed;
+    action.sa_flags = SA_SIGINFO | SA_ONSTACK | SA_RESETHAND;
+    for (int signal : {SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT}) sigaction(signal, &action, nullptr);
 }
 
 void sc2_android_start()
@@ -87,6 +131,7 @@ void sc2_android_start()
     } else {
         toSystemLog();
     }
+    reportCrashes();
 }
 
 bool sc2_android_start_again(const std::vector<std::string> &args)
