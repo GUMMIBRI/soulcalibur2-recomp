@@ -89,7 +89,9 @@ steps a frame; H (or Black) hides the life bars and timer; F12 saves a screensho
 1. Run the launcher (`Soulcalibur II Recomp.app`, `soulcalibur2-launcher` on Linux, `soulcalibur2-launcher.exe` on
    Windows, the app on Android: install `Soulcalibur2Recomp-android.apk`).
 2. On its **Game** page choose your Soulcalibur II (USA) Xbox disc image (`.iso`), or the `Default.xbe` among the
-   disc's files. It is checked, and only ever read (on Android it is copied into the app's folder first).
+   disc's files. It is checked, and only ever read (on Android it is copied into the app's folder first). The check is of the disc's `Default.xbe` (image hashes differ
+   with the dumping tool): SHA-256 `d7c2e1fc993350821e3f7e13cfd1c9d4ba6a7bf91011005bdd1f843899efb730` as on the
+   disc, or `7ce12851850ab46766f77c612b251afe7c8bd81f879e11b4836bdf766be542c6` with extract-xiso's media patch.
 3. For the guests, choose your GameCube and/or PlayStation 2 disc on the **Guest** page; the launcher builds them
    once (a few minutes).
 4. Press **Play**.

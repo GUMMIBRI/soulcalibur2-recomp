@@ -8,6 +8,7 @@
 #include "guest_page.h"
 
 #include "../../runtime/sc2_settings.h"
+#include "../../runtime/sc2_xbe.h"
 #include "../../third_party/doa2u-re/recomp-runtime/disc_image.h"
 
 #include <algorithm>
@@ -87,6 +88,16 @@ std::string sha256_of_file(const std::string &path) {
     return sum;
 }
 
+// The port's media-patched executable or the retail disc's (runtime/sc2_xbe.h).
+bool is_supported_xbe(const std::string &sum) {
+    return sum == LAUNCHER_XBE_SHA256 || sum == SC2_RETAIL_XBE_SHA256;
+}
+
+// What a refusal says about the file found, so a report can name it.
+std::string found(const std::string &sum) {
+    return sum.empty() ? std::string() : " (its Default.xbe's SHA-256 begins " + sum.substr(0, 12) + ")";
+}
+
 bool is_iso(const std::string &path) {
     std::string extension = std::filesystem::u8path(path).extension().string();
     for (char &c : extension) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -120,8 +131,11 @@ launcher::FileCheck check_image(const std::string &path) {
         complete = complete && recomp_disc_image_lookup(needed, &entry) && !entry.directory;
     }
     recomp_disc_image_close();
-    if (sum != LAUNCHER_XBE_SHA256) {
-        check.message = "This Xbox disc image isn't Soulcalibur II (USA), the release this port is made from.";
+    if (sum.empty()) {
+        check.message = "This Xbox disc image has no Default.xbe.";
+    } else if (!is_supported_xbe(sum)) {
+        check.message = "This Xbox disc image isn't Soulcalibur II (USA), the release this port is made from" +
+            found(sum) + ".";
     } else if (!complete) {
         check.message = "Soulcalibur II (USA), but the image is missing some of the disc's files.";
     } else {
@@ -149,8 +163,10 @@ launcher::FileCheck check_game(const std::string &path) {
         check.message = "Choose your Soulcalibur II disc image (.iso), or the Default.xbe among the disc's files.";
         return check;
     }
-    if (sha256_of_file(path) != LAUNCHER_XBE_SHA256) {
-        check.message = "This Default.xbe isn't Soulcalibur II (USA) for the Xbox, the release this port is made from.";
+    const std::string sum = sha256_of_file(path);
+    if (!is_supported_xbe(sum)) {
+        check.message = "This Default.xbe isn't Soulcalibur II (USA) for the Xbox, the release this port is made from" +
+            found(sum) + ".";
         return check;
     }
     for (const char *needed : {"root.olk", "movie.afs", "bgm.afs"}) {
