@@ -127,35 +127,8 @@ static void fastCores()
         std::fprintf(stderr, "soulcalibur2: on the %d fast cores of %d\n", chosen, count);
 }
 
-// From the first frame on, the game's own thread on the fastest core alone (a phone has one or two above the rest);
-// the threads already started (sound, the pump, the game's others) stay on the other fast cores
-static void fastestCore()
-{
-    const int count = static_cast<int>(sysconf(_SC_NPROCESSORS_CONF));
-    long fastest = 0;
-    std::vector<long> top(count, 0);
-    for (int cpu = 0; cpu < count; ++cpu) {
-        char path[96];
-        std::snprintf(path, sizeof path, "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", cpu);
-        if (std::FILE *file = std::fopen(path, "r")) {
-            if (std::fscanf(file, "%ld", &top[cpu]) != 1) top[cpu] = 0;
-            std::fclose(file);
-        }
-        fastest = std::max(fastest, top[cpu]);
-    }
-    cpu_set_t set;
-    CPU_ZERO(&set);
-    int chosen = 0;
-    for (int cpu = 0; cpu < count; ++cpu) {
-        if (fastest > 0 && top[cpu] == fastest) {
-            CPU_SET(cpu, &set);
-            ++chosen;
-        }
-    }
-    if (chosen == 0 || chosen == count) return;
-    if (sched_setaffinity(0, sizeof set, &set) == 0)
-        std::fprintf(stderr, "soulcalibur2: the game's thread on the %d fastest core%s\n", chosen, chosen > 1 ? "s" : "");
-}
+// (Not the fastest core alone: a phone caps that one first when it warms, below the next ones, and the game was then
+// held on it. On the fast cores the system moves it to whichever is quickest at the time.)
 
 static void reportCrashes()
 {
@@ -208,17 +181,12 @@ extern "C" void sc2_android_frame(void)
 {
     static uint64_t window_start = 0, last = 0, longest = 0;
     static unsigned long long gaps_before = 0;
-    static bool first_frame = true;
     static unsigned frames = 0;
     const uint64_t now = SDL_GetTicksNS();
     if (last != 0) longest = std::max(longest, now - last);
     last = now;
     ++frames;
     if (window_start == 0) window_start = now;
-    if (first_frame) {
-        first_frame = false;
-        fastestCore();
-    }
     if (now - window_start >= 10000000000ull) {
         const unsigned long long gaps = recomp_audio_output_underruns();
         std::fprintf(stderr, "soulcalibur2 speed: %.1f frames a second, longest frame %.1f ms, sound gaps %llu\n",
