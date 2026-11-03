@@ -21,6 +21,7 @@ extern void sub_00044360(void);
 extern void sub_0003BED0(void);
 extern void sub_000502A0(void);
 extern void sub_0002ABC0(void);
+extern void sub_0006A190(void);
 extern void sub_000331B0(void);
 extern void sub_0002ED80(void);
 extern void sub_0002EC90(void);
@@ -192,12 +193,27 @@ static void sprite_draw(void)
     float saved[14];
     memcpy(saved, recomp_memory(sprite, sizeof saved), sizeof saved);
     inside = true;
-    sprite_piece(sprite, 152.0f, cut, 0.0f);
-    sprite_piece(sprite, cut - column, cut, column);
-    sprite_piece(sprite, cut, 488.0f, column);
+    const float left = -column * 0.5f;   /* (the whole grid half a column left, centred again) */
+    sprite_piece(sprite, 152.0f, cut, left);
+    sprite_piece(sprite, cut - column, cut, left + column);
+    sprite_piece(sprite, cut, 488.0f, left + column);
     inside = false;
     memcpy(recomp_memory(sprite, sizeof saved), saved, sizeof saved);
     recomp_runtime.registers.esp += 4u;   /* the original's ret */
+}
+
+/* 0x6A190(position, cell): a select cell's place, x = its column x a column's width (0x17774C) plus the grid's
+   left; y by its row. With a guest in the fifth column the grid is half a column wider on the right than the
+   panel the game centres, so every cell goes half a column left (the panel too, sprite_draw): the grid centred,
+   clear of player 2's model. The cursor and the 1P/2P marks follow the cells. */
+static void cell_place(void)
+{
+    const uint32_t position = *recomp_memory_u32(recomp_runtime.registers.esp + 4u);
+    sub_0006A190();
+    if (!sc2_guest_fifth_column()) return;
+    float *f = (float *)recomp_memory(position, 4u), step;
+    memcpy(&step, recomp_memory(0x0017774Cu, 4u), 4u);
+    *f -= step * 0.5f;
 }
 
 uint32_t sc2_net_seed;
@@ -447,6 +463,7 @@ RecompFunction recomp_sc2_hooks_lookup_manual(uint32_t address)
     case 0x0003bed0u: return fight_setup;
     case 0x000502a0u: return scene_switch;
     case 0x0002abc0u: return sprite_draw;
+    case 0x0006a190u: return cell_place;
     case 0x000566f0u: return weapon_item;
     case 0x000c4940u: return play_counted;
     case 0x00036a70u: return roster_place;
