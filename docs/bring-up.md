@@ -7,15 +7,21 @@ supported executable unless it says otherwise.
 
 - Soulcalibur II (USA), Xbox. Disc files: `Default.xbe` (3.6 MB), `root.olk`
   (694 MB, all game data), `movie.afs` (movies), `bgm.afs` (music).
-- `Default.xbe` SHA-256 `7ce12851850ab46766f77c612b251afe7c8bd81f879e11b4836bdf766be542c6`.
+- `Default.xbe` SHA-256 `7ce12851850ab46766f77c612b251afe7c8bd81f879e11b4836bdf766be542c6`
+  (the port's target, media-patched) or `d7c2e1fc993350821e3f7e13cfd1c9d4ba6a7bf91011005bdd1f843899efb730`
+  (retail); the launcher and runner take both (`runtime/sc2_xbe.h`).
   Every XDK library is version 5455: XAPILIB, D3D8, D3DX8, XGRAPHC, DSOUND,
   XBOXKRNL, LIBCPMT, LIBC. No XNet or XOnline.
 - Movies use CRI Sofdec (`PSGSFD*` sections). Dolby section present.
-- **The `.text` section's digest does not match its bytes**; all other
-  sections match. Either this dump's executable was altered or the retail
-  disc shipped that way; not yet checked against an independent reference.
-  The runner authenticates the whole file by SHA-256 and loads it anyway
-  (`recomp_load_xbe(..., fileAuthenticated)`), naming the section on stderr.
+- **The target's `.text` digest does not match its bytes** because that copy
+  carries extract-xiso's media patch: the byte at file offset `0xf68c7`
+  (virtual `0x1068c7`, the branch after `call` at `0x1068c0`) is `0xeb`
+  (`jmp`) where the retail disc has `0x7d` (`jge`). Putting `0x7d` back makes
+  every digest match and gives the retail file's SHA-256. The lift was made
+  from the patched copy, so the recompiled code always jumps; for a retail
+  file the runner writes `0xeb` into guest memory after loading, so both start
+  from the same memory. The runner authenticates the whole file by SHA-256
+  and loads it anyway (`recomp_load_xbe(..., fileAuthenticated)`).
 
 ## Lift
 

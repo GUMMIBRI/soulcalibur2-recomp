@@ -40,6 +40,7 @@
 #include "sc2_hooks.h"
 #include "sc2_netplay.h"
 #include "sc2_version.h"
+#include "sc2_xbe.h"
 #include "../recomp-common/launcher/src/online.h"
 #include "sc2_online.h"
 #include "input_keyboard_win32.h"
@@ -1159,16 +1160,26 @@ int main(int argc, char **argv)
         std::cerr << "recomp runner: " << parsed.errors.front() << '\n';
         return 1;
     }
-    if (parsed.metadata.fileSha256 != RECOMP_XBE_SHA256) {
-        std::cerr << "recomp runner: XBE SHA-256 differs from the authenticated program target\n";
+    /* The port's media-patched copy, or the retail disc's (sc2_xbe.h). */
+    const bool retailXbe = parsed.metadata.fileSha256 == SC2_RETAIL_XBE_SHA256;
+    if (parsed.metadata.fileSha256 != RECOMP_XBE_SHA256 && !retailXbe) {
+        std::cerr << "recomp runner: XBE SHA-256 " << parsed.metadata.fileSha256
+                  << " is neither Soulcalibur II (USA) retail nor the program target\n";
         return 1;
     }
     std::vector<std::uint8_t> memory(RECOMP_XBOX_RAM_SIZE, 0u);
     std::string error;
-    // The file was authenticated by SHA-256 above; SC2's .text digest is stale (docs/bring-up.md).
+    // The file was authenticated by SHA-256 above; the patched copy's .text digest is stale (docs/bring-up.md).
     if (!recomp_load_xbe(parsed, memory, error, true)) {
         std::cerr << "recomp runner: " << error << '\n';
         return 1;
+    }
+    if (retailXbe) {
+        if (memory[SC2_MEDIA_PATCH_ADDRESS] != SC2_MEDIA_PATCH_RETAIL) {
+            std::cerr << "recomp runner: the retail XBE's media check byte is not where it should be\n";
+            return 1;
+        }
+        memory[SC2_MEDIA_PATCH_ADDRESS] = SC2_MEDIA_PATCH_BYTE;
     }
     const auto imageEnd = static_cast<std::uint64_t>(parsed.metadata.header.baseAddress) +
         parsed.metadata.header.sizeImage;
