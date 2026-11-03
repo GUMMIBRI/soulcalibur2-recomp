@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Unlock everything is kept** ([#5](https://github.com/tmcleroy/soulcalibur2-recomp/issues/5)): the cheat
+  unlocked everything only until the game was closed. The game saves its unlocks from a packed copy, which the
+  cheat left as it was; it now updates that too, so the next save keeps everything.
 - **Resolutions up to 8x**: 5x (3200x2400), 6x (3840x2880) and 8x (5120x3840) on the Graphics page, for 4K
   screens and fast graphics cards.
 - **Steadier on 120 Hz screens (Mac)**: the game's 60 frames a second now follow the display's refreshes, so on a

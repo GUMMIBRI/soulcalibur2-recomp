@@ -101,6 +101,8 @@ enum : uint32_t {
     kItems = 0x003bb368u,
     kItemCount = 0x116u,
     kItemHad = 3u,
+    kItemsPacked = 0x003bb1f0u,
+    kItemsPackedBytes = 75u,
     /* How long health must stay put before a refill: the combo is over. */
     kRefillFrames = 90u,
     /* The longest recording: 20 seconds */
@@ -582,6 +584,14 @@ bool TrainingUnlockAll()
 {
     if (sc2_net_live) return false;
     std::memset(recomp_memory(kItems, kItemCount), kItemHad, kItemCount);
+    /* The save keeps the items packed, four to a byte (0x3BB1F0: 300 items in 75 bytes, the first in the low
+       bits), and loading unpacks them over the table (0x565B0). The game's own unlock (0x57680) packs the table
+       again after each change (0x564C0); this does the same, or the next save would write the old unlocks (#5). */
+    uint8_t *packed = recomp_memory(kItemsPacked, kItemsPackedBytes);
+    const uint8_t *items = recomp_memory(kItems, 4u * kItemsPackedBytes);
+    for (uint32_t n = 0; n < kItemsPackedBytes; ++n)
+        packed[n] = uint8_t((items[4u * n] & 3u) | (items[4u * n + 1u] & 3u) << 2 | (items[4u * n + 2u] & 3u) << 4 |
+                            (items[4u * n + 3u] & 3u) << 6);
     TrainingNote("Everything unlocked (kept when the game saves)");
     return true;
 }
