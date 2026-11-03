@@ -101,8 +101,7 @@ in your user folder (`~/Library/Application Support/Soulcalibur II` on macOS, `~
 Linux), not beside the game's files.
 
 Status: Arcade, VS, Weapon Master, the Extra modes, the Museum and online play work, tested mostly on macOS; the
-Linux build runs on a Steam Machine. Windows builds but is untested. Android runs in the emulator, not yet tried on a
-phone.
+Linux build runs on a Steam Machine. Windows builds but is untested. Android runs on a Pixel 9 and in the emulator.
 
 ## Building (macOS)
 
