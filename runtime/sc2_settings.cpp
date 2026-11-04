@@ -81,6 +81,10 @@ const std::vector<recomp::FeatureInfo> &Features()
             "pixels, for making a pack: an image of the same name (a DDS, any size) in the textures folder takes its "
             "place.",
             0, {}},
+        {"language", "Game", "Language",
+            "The language of the game's text: menus, profiles and messages. The European disc (Europe, Australia) has "
+            "five; the American disc has English only. Takes effect when the game starts.",
+            0, {"English", "Deutsch", "Fran\u00e7ais", "Espa\u00f1ol", "Italiano"}},
         {"fps_counter", "Graphics", "FPS counter",
             "The frames shown each second, in the top right corner. The game runs at 60.", 0, {}},
         {"health_refill", "Training", "Health refill",
@@ -188,6 +192,7 @@ Settings LoadSettings(const std::string &path)
         else if (features[i].name == "no_damage_p1") settings.no_damage[0] = values[i] != 0;
         else if (features[i].name == "no_damage_p2") settings.no_damage[1] = values[i] != 0;
         else if (features[i].name == "shader") settings.shader = values[i];
+        else if (features[i].name == "language" && values[i] >= 0 && values[i] < 5) settings.language = values[i];
         else if (features[i].name == "one_hit") settings.one_hit = values[i] != 0;
         else if (features[i].name == "online_ping") settings.online_ping = values[i] != 0;
         else if (features[i].name == "online_delay") settings.online_delay = values[i] != 0;

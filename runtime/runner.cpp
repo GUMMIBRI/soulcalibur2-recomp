@@ -1211,6 +1211,8 @@ int main(int argc, char **argv)
         sc2::TrainingState().one_hit = settings.one_hit;
         sc2::TrainingState().fps_counter = settings.fps_counter;
         sc2::OnlineDisplay() = {settings.online_ping, settings.online_delay, settings.online_hide_names};
+        if (std::getenv("RECOMP_XBOX_LANGUAGE") == nullptr)   // (kernel_config.c: XC_LANGUAGE)
+            setenv("RECOMP_XBOX_LANGUAGE", std::to_string(sc2::XboxLanguage(settings.language)).c_str(), 1);
         if (settings.scale > 1u && std::getenv("RECOMP_D3D_SCALE") == nullptr)
             setenv("RECOMP_D3D_SCALE", std::to_string(settings.scale).c_str(), 1);
         sc2::ApplyBindings(settingsPath);

@@ -1,0 +1,50 @@
+[
+  {
+    "start": "0x001732DC",
+    "note": "XPP device-type callback reached only through its type table (USA 0x0016E0DC; found by XPP section moved whole (+0x5200))"
+  },
+  {
+    "start": "0x0008A5B0",
+    "note": "Reached only as an immediate (data_imm) after padding (USA 0x00087710; found by the exactly matched instruction that pushes or stores it)"
+  },
+  {
+    "start": "0x000A6110",
+    "note": "Reached only as an immediate (data_imm) after padding (USA 0x000A3400; found by the exactly matched instruction that pushes or stores it)"
+  },
+  {
+    "start": "0x000F50F0",
+    "note": "Reached only as an immediate (data_imm) after padding (USA 0x000F0CA0; found by the exactly matched instruction that pushes or stores it)"
+  },
+  {
+    "start": "0x0010F090",
+    "note": "CRI thread entry passed to CreateThread as an immediate (USA 0x00109EB0; found by the exactly matched instruction that pushes or stores it)"
+  },
+  {
+    "start": "0x0010F5B0",
+    "note": "CRI thread entry passed to CreateThread as an immediate (USA 0x0010A3B0; found by the exactly matched instruction that pushes or stores it)"
+  },
+  {
+    "start": "0x0011A2A0",
+    "note": "Reached only as an immediate (data_imm) after padding (USA 0x001150F0; found by its first 16-32 bytes, found once in PAL code)"
+  },
+  {
+    "start": "0x001532F1",
+    "note": "Destructor thunk registered as an immediate (0x1456b4) (USA 0x0014E0F1; found by the exactly matched instruction that pushes or stores it)"
+  },
+  {
+    "start": "0x00016FF0",
+    "note": "Virtual method reached only through its vtable (0x176bc8) (USA 0x00016FA0; found by its first 16-32 bytes, found once in PAL code)"
+  },
+  {
+    "start": "0x000DE820",
+    "note": "Game handler reached only through a function table (0x337020) (USA 0x000DACA0; found by its first 16-32 bytes, found once in PAL code)"
+  },
+  {
+    "start": "0x0006FD20",
+    "note": "Function table entry (0x17b3d8) right after data bytes; found at the menu (USA 0x0006E550; found by its function table moved to 0x180190; neighbours moved +0x17d0)"
+  },
+  {
+    "start": "0x000B48B0",
+    "note": "Function table entry (0x1837e8) right after data bytes; found by the table scan (USA 0x000B17A0; found by its first 16-32 bytes, found once in PAL code)"
+  }
+]

@@ -26,6 +26,7 @@ const recomp::BindTable &BindingTable();
 struct Settings {
     unsigned scale = 1;   /* internal resolution: N times 640x480 */
     int shader = 0;       /* the Shader feature's choice (ShaderPreset) */
+    int language = 0;     /* English, Deutsch, Francais, Espanol, Italiano (XboxLanguage) */
     bool health_refill = false;
     bool infinite_time = false;
     bool input_display = false, combo_readout = false, hit_boxes = false, frame_data = false;
@@ -36,6 +37,10 @@ struct Settings {
 };
 
 Settings LoadSettings(const std::string &path);
+
+/* The Xbox's language code (XC_LANGUAGE) for the Language feature's choice: English 1, German 3, French 4,
+   Spanish 5, Italian 6. */
+constexpr int XboxLanguage(int choice) { return choice == 1 ? 3 : choice == 2 ? 4 : choice == 3 ? 5 : choice == 4 ? 6 : 1; }
 
 /* The preset (a .slangp) for the Shader feature's choice, "" for Off (or Your own with none there): the game's
    shaders/ folder, or Your own's beside settings.ini. */

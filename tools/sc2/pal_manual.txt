@@ -1,0 +1,47 @@
+# Hand-settled US -> PAL addresses for tools/sc2/pal_port.py: "US PAL" or "US keep" (not an address).
+# Each says how it was settled. Shape-only (fuzzy) function matches are taken only when their callers agree:
+# the matched callers' call instructions name the PAL function (private/program-pal/callers.py while porting).
+
+# --- not addresses: constants that fall in the image's range
+0x000343fd keep   # rand's LCG multiplier (sc2_hooks.c)
+0x00269ec3 keep   # rand's LCG increment
+0x003bf0f8 keep   # an offset added to the pool pointer (sc2_wm_select.c pool())
+0x00382010 keep   # DirectSound buffer-description flags mask (dsound_buffer_adapter.c)
+
+# --- code: shape-only matches, confirmed by callers or by identical shape at the same distance
+0x00044360 0x000451a0   # weapon bones setter: 1 caller agrees; differs only by fighter-record offsets (+0x20)
+0x00047a0e 0x0004884e   # return address after the fighter setup's call to 0x44360 (PAL call at 0x48849)
+0x0004fef0 0x00050f10   # first logo scene's update: the next one (0x50190) is an exact match at 0x511c0
+0x000d24f0 0x000d5cc0   # 3 callers agree
+0x000d29a0 0x000d6180   # identical shape (ratio 1.0), 0x37e0 after it as 0xd24f0 is
+0x000f1310 0x000f5770   # 3 callers agree, identical shape
+0x000f1c70 0x000f60d0   # 3 callers agree (the shape pass picked its twin 0xf60a0)
+0x000f26e0 0x000f6b40   # 4 callers agree
+0x000f2890 0x000f6cf0   # 1 caller agrees, identical shape
+0x000f28e0 0x000f6d90   # 1 caller agrees, identical shape
+0x000fa030 0x000fe700   # 2 callers agree; the Weapon Master grid builder grew 19 instructions in PAL
+0x000fa430 0x000feb40   # 2 callers agree
+0x001068c7 0x0010baa7   # the media check's jge (same code; the PAL copy is media-patched too)
+0x0010a330 0x0010f530   # 1 caller agrees (the shape pass picked 0x146c0)
+
+# --- data no instruction names: by their bytes (64 of 64 alike) or by the pointer that holds them
+0x00177950 0x0017cbc0   # Spawn's strings, 0x177950-0x17798b: all 0x5270 later, bytes alike
+0x00177954 0x0017cbc4
+0x00177968 0x0017cbd8
+0x00177970 0x0017cbe0
+0x00177978 0x0017cbe8
+0x0017797c 0x0017cbec
+0x00177984 0x0017cbf4
+0x0017798b 0x0017cbfb
+0x0017a7c8 0x0017f538   # each character's cell: 1 reference and 63/64 bytes alike
+0x00188dc4 0x0018d690   # Weapon Master cell offsets: 2 references
+0x00188f20 0x0018d7cc   # 1 reference each; bytes alike
+0x00188f24 0x0018d7d0
+0x00188f28 0x0018d7d4
+0x00188f44 0x0018d7f0
+0x001967a0 0x0019afe0   # fight camera component (0x195fb0 + 0x7f0, which moved 0x4840; bytes alike)
+0x001967b0 0x0019aff0
+0x001968a0 0x0019b0e0
+0x0034ed88 0x003608f8   # Arcade endings table: 1 reference, 64/64 bytes alike
+0x0039a77c 0x003ac3bc   # fighter base used by SC2_TEST_KO: 3 references agree
+0x003cb418 0x003dd0a8   # frame count: +8 into the object at 0x3cb410, whose pointer table entry is at PAL 0x225b58 (0x3dd0a0)
