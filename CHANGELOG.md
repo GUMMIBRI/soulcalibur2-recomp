@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.2.1-beta.1
+
+Online play on Windows works: hosting no longer closes the game when the other player comes. Both players need
+this version to play each other online.
 
 - **Online on Windows**: hosting closed the game when the other player came, and no match began. The host's game
   starts over for the match, and on Windows the new copy was given its arguments without quotes, so a path with a
