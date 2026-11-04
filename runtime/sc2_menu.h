@@ -21,6 +21,9 @@ void SetShader(int choice);
 /* The speed chosen (the menu's Speed, - and =): game frames to a frame shown (1 at full speed; online, always 1) */
 double GameSpeed();
 
+/* Tests (SC2_TEST_KEYS SWAP:start): reads of controller 1 still to be given Start, counted down by the runner */
+extern int test_start_reads;
+
 } // namespace sc2
 
 #endif
