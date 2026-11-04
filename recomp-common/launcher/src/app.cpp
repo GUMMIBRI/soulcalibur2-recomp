@@ -411,6 +411,50 @@ static std::string stopped_text(const std::string& name, int code, const std::st
     return name + " stopped with code " + std::to_string(code) + (reason.empty() ? std::string() : " (" + reason + ")");
 }
 
+// What a code means, for a player: a crash (a signal, or a Windows exception), or the runtime stopping on
+// purpose (its "recomp stop: <area>:..." line names the part of the game it was in), or "" when not known
+static std::string stopped_meaning(int code, const std::string& reason) {
+    if (!reason.empty()) {
+        static const std::pair<const char*, const char*> kAreas[] = {
+            {"dsound:", "its sound"}, {"audio", "its sound"}, {"d3d", "its graphics"}, {"input:", "the controllers"},
+            {"memory:", "its memory"}, {"kernel:", "the Xbox system it runs on"}, {"xapi:", "the Xbox system it runs on"},
+            {"import:", "the Xbox system it runs on"}, {"save", "its saves"}, {"file", "reading the game's files"},
+        };
+        std::string area = "it";
+        for (const auto& [prefix, name] : kAreas) {
+            if (reason.rfind(prefix, 0) == 0) {
+                area = name;
+                break;
+            }
+        }
+        return "The game met something in " + area + " that this version can't handle yet, so it closed itself "
+               "rather than go on wrong. It's a bug in the port, not in your copy of the game.";
+    }
+    if (code < 0 && code > -64) {
+        const int signal = -code;
+        const char* what = signal == 11 || signal == 10 ? " (a bad memory access)"
+                           : signal == 6             ? " (it gave up on an error)"
+                           : signal == 9             ? " (it was killed, perhaps by the system for using too much memory)"
+                           : signal == 4             ? " (an instruction it couldn't run)"
+                           : signal == 8             ? " (a bad calculation)"
+                                                     : "";
+        return std::string("The game crashed") + what + ". It's a bug in the port, not in your copy of the game.";
+    }
+    const unsigned int windows = static_cast<unsigned int>(code);
+    if (windows >= 0xC0000000u) {
+        char hex[16];
+        std::snprintf(hex, sizeof hex, "0x%08X", windows);
+        const char* what = windows == 0xC0000005u   ? " (a bad memory access)"
+                           : windows == 0xC00000FDu ? " (it ran out of stack)"
+                           : windows == 0xC0000409u ? " (it gave up on an error)"
+                           : windows == 0xC0000135u ? " (a file it needs, a .dll, is missing beside it)"
+                                                    : "";
+        return std::string("The game crashed") + what + ", Windows error " + hex +
+               ". It's a bug in the port, not in your copy of the game.";
+    }
+    return std::string();
+}
+
 #ifdef LAUNCHER_ISSUES_REPO
 // A new GitHub issue in the port's repository, its title filled in
 static std::string issue_url(const std::string& title) {
@@ -475,6 +519,9 @@ int play_directly(const std::string& id, const std::vector<std::string>& extra) 
     if (code != 0 && !next) {
         const StoppedLog kept = keep_stopped_log(target->folder);
         std::string text = stopped_text(target->name, code, kept.reason) + ".";
+        if (std::string meaning = stopped_meaning(code, kept.reason); !meaning.empty()) {
+            text += "\n\n" + meaning;
+        }
         if (!kept.path.empty()) {
 #ifdef LAUNCHER_ISSUES_REPO
             text += "\n\nTo report it, open an issue on GitHub, say what you were doing, and attach this run's log:\n" +
@@ -2087,6 +2134,10 @@ void App::stopped_note(Slot& one, float width) {
     ui::gap(10);
     std::string text = stopped_text(collection_ ? one.name : std::string("The game"), one.game.exit_code(), one.stopped_reason) + ".";
     ui::text(text.c_str(), Font::Regular, ui::size::kDetail, p.danger, width);
+    if (std::string meaning = stopped_meaning(one.game.exit_code(), one.stopped_reason); !meaning.empty()) {
+        ui::gap(6);
+        ui::text(meaning.c_str(), Font::Regular, ui::size::kDetail, p.text, width);
+    }
     if (one.stopped_log.empty()) {
         return;
     }
@@ -2103,6 +2154,7 @@ void App::stopped_note(Slot& one, float width) {
     ui::text(help.c_str(), Font::Regular, ui::size::kDetail, p.secondary, width);
     ImGui::PushID(one.id.c_str());
     bool row = false;
+    const float row_left = ImGui::GetCursorScreenPos().x;
 #ifndef __ANDROID__
     ui::gap(8);
     if (ui::button("Show the log", Kind::Secondary, 150.0f) && interactive_) {
@@ -2111,7 +2163,11 @@ void App::stopped_note(Slot& one, float width) {
     row = true;
 #endif
 #ifdef LAUNCHER_ISSUES_REPO
-    if (row) {
+    // (beside Show the log when both fit the page's width, as buttons grow to their labels; under it if not)
+    ui::push_font(Font::Semibold, ui::size::kBody);
+    const float report_width = std::max(px(180.0f), ImGui::CalcTextSize("Report on GitHub").x + px(40));
+    ui::pop_font();
+    if (row && ImGui::GetItemRectMax().x + px(10) + report_width <= row_left + width) {
         ImGui::SameLine(0.0f, px(10));
     } else {
         ui::gap(8);
@@ -2122,6 +2178,7 @@ void App::stopped_note(Slot& one, float width) {
     }
 #endif
     (void)row;
+    (void)row_left;
     ImGui::PopID();
 }
 
