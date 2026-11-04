@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.2-beta.1
+
+A fix for the game closing with "The game stopped with code 2" as a fight loads, and clearer messages when the game
+stops: what happened, in plain words, which log to send and where. Both players need this version to play each
+other online.
+
+- **No more "code 2" as a fight loads** ([#20](https://github.com/tmcleroy/soulcalibur2-recomp/issues/20),
+  [#22](https://github.com/tmcleroy/soulcalibur2-recomp/issues/22)): the game closed itself when a sound reached a
+  piece of data it couldn't decode (seen before Inferno in Arcade and in Weapon Master). That piece now plays as
+  silence, as on the Xbox, and the game goes on.
+- **When the game stops, the launcher says why and what to do**: what the code means in plain words (a part of the
+  game this version can't handle yet, or a crash), the log of that run kept as `logs/stopped-<date-time>.log` (the
+  game's log is written over at every start), **Show the log**, and **Report on GitHub**, which opens a new issue
+  with its title filled in. Started straight from a Steam shortcut, the game shows the same in a box.
+
 ## 0.2.1-beta.1
 
 Online play on Windows works: hosting no longer closes the game when the other player comes. Both players need
