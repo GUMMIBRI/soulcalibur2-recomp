@@ -132,9 +132,10 @@ textures** is on (the Features page, Graphics, or the in-game menu: it switches 
   [Dolphin forums](https://forums.dolphin-emu.org/Thread-soul-calibur-2-hd-texture-pack). Download and unzip it,
   then on the launcher's **Textures** page choose its folder and press **Import**: each of its images is matched to
   the Xbox texture with the same picture (a map of names built into the launcher; the Xbox's are the same pictures
-  as the GameCube's), about 4,200 of the game's textures, characters, stages and menus. The pack is only read; what
-  the import makes goes in `textures/GRSEAF`. What only the Xbox has (Spawn, the Xbox's own screens) keeps its own
-  textures. Not on Android yet: import on a computer and copy the `textures` folder into the app's folder.
+  as the GameCube's), about 4,300 of the game's textures, characters, stages and menus. The pack is only read; what
+  the import makes goes in `textures/GRSEAF`. Link is in it too (his textures as the Guest page builds them). What
+  the GameCube disc does not have keeps its own textures: Spawn and the Xbox's own screens, and Heihachi (from the
+  PlayStation 2). Not on Android yet: import on a computer and copy the `textures` folder into the app's folder.
 - **Your own**: turn on **Dump textures** and play: each texture the game draws is written once to `textures-dump`,
   named by its pixels (16 hex digits, `.dds`). An image of the same name in `textures` (a DDS: DXT1, DXT3, DXT5 or
   32-bit BGRA, any size, with mip levels or without) takes its place.

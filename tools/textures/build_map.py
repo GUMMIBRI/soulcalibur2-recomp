@@ -3,7 +3,12 @@
 pack (GRSEAF, the USA GameCube disc) as one the game reads (d3d_texture_replace.h names: XXH64 of the first level as
 the game stores it, the P8 palette after it).
 
-  build_map.py XBOX_ROOT_OLK GAMECUBE_DISC_OR_ROOT_OLK OUTPUT_MAP
+  build_map.py OUTPUT_MAP GAMECUBE_DISC_OR_ROOT_OLK XBOX_ROOT_OLK [GUESTS_ROOT_OLK]
+
+With the guests' file (the launcher's guest/guests-root.olk, built from the same GameCube disc) too, Link's
+textures are in the map: the guest converter keeps the GameCube's CMPR blocks, so they are found as any other's,
+and it makes the same bytes for everyone with the same discs and release (GUESTS_VERSION). Rebuild the map when
+that changes. Spawn (the Xbox's own) and Heihachi (the PS2's) have nothing in a GameCube pack.
 
 The map holds names (hashes) only, nothing of the games' data. Each line is one Xbox texture:
 
@@ -217,9 +222,9 @@ def xbox_textures(data, bank):
     return [XboxTexture(data, bank, k) for k in range(count)]
 
 
-def main(xbox_path, gamecube_path, output):
+def map_rows(xbox_path, gc_data):
+    """The map's rows for one Xbox root.olk: {xbox name: (rule, w, h, stored, names)}"""
     xbox = Olnk.open(xbox_path)
-    gc_data = gamecube_root(gamecube_path)
     gc = Olnk(gc_data)
     gc_view = memoryview(gc_data)
     xd = xbox.data
@@ -319,16 +324,25 @@ def main(xbox_path, gamecube_path, output):
                     counts["formats differ"] += 1
                     continue
                 counts["by " + how] += 1
+    rules = collections.Counter(r[0] for r in rows.values())
+    print("%s: %d Xbox textures mapped (%s); %s" % (xbox_path, len(rows), dict(rules), dict(counts)))
+    return rows
+
+
+def main(output, gamecube_path, *xbox_paths):
+    gc_data = gamecube_root(gamecube_path)
+    rows = {}
+    for path in xbox_paths:
+        rows.update(map_rows(path, gc_data))
     with open(output, "w") as out:
         out.write("# Soulcalibur II Recomp texture map: Dolphin (GRSEAF) names to the game's (tools/textures/build_map.py)\n")
         for name in sorted(rows):
             rule, w, h, stored, names = rows[name]
             out.write("%s %s %dx%d %dx%d %s\n" % (name, rule, w, h, stored[0], stored[1], " ".join(names)))
-    rules = collections.Counter(r[0] for r in rows.values())
-    print("%d Xbox textures mapped (%s); %s" % (len(rows), dict(rules), dict(counts)))
+    print("%d in the map" % len(rows))
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 4:
+    if len(sys.argv) < 4:
         sys.exit(__doc__)
     main(*sys.argv[1:])
