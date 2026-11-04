@@ -217,7 +217,7 @@ parts 1 and 3-11, weapon records, both moveset packs. What converts:
   at +0x18 is 4096 for 48 kHz; 32-byte sounds are placeholders. Converted
   audio and the Xbox's own correlate in spectrum (0.8) but not sample by
   sample: the Xbox's are separate encodes of the same recordings.
-- **Strings**: from SLUS_206.43 (Heihachi, ÃƒÂ¥Ã‚Â¹Ã‚Â³ÃƒÂ¥Ã¢â‚¬Â¦Ã‚Â«, HEIHACHI, Iron Fist,
+- **Strings**: from SLUS_206.43 (Heihachi, 平八, HEIHACHI, Iron Fist,
   Japan?, 75), written over Spawn's at start (`--guest-heihachi`).
 
 In game: Heihachi is picked in the guest's place, fights in Practice, and
@@ -411,9 +411,12 @@ ambient (0,0,0), diffuse (1,1,1,1), specular (0.5,0.431,0.38), and power about
 20 from the original PS2 material. No texture recoloring or light suppression
 is involved. Natural stage lighting and the source's warm highlights remain.
 
-The C++ and Python parsers now align the payload and reject malformed lengths.
+The C++ and Python parsers align the payload, read only complete RGBA quadwords,
+and accept empty sections or trailing partial colours. Colour reads beyond the
+input buffer are rejected.
 Guest cache version is 2. Synthetic tests cover all four word alignments and
-truncation. Rebuilding the user's combined roster changed only 25 material
+empty/partial payloads, the size-16 kind-9 section, and out-of-bounds
+colour reads. Rebuilding the user's combined roster changed only 25 material
 bytes in each of four Heihachi model variants (/4/1021,1022,1029,1030); every
 other archive entry, model geometry, and texture remained byte-identical.
 

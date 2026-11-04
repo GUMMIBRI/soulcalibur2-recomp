@@ -115,14 +115,19 @@ def block(data, at):
         tag, size, argument = data[at], data[at + 1], struct.unpack_from("<H", data, at + 2)[0]
         if tag == 0:
             return sections
+        if size == 0:
+            raise ValueError("a model block command of no size")
         if tag == 7:
             # Payload quadwords align to the model, not the command. A command
             # at +8 has eight padding/header bytes, not sixteen (Heihachi hair).
             colours_at = (at + 4 + 15) & ~15
-            colour_bytes = at + size - colours_at
-            if colour_bytes <= 0 or colour_bytes % 16 or at + size > len(data):
-                raise ValueError("invalid aligned material payload")
-            current = dict(kind=argument & 0xff, colours=struct.unpack_from("<%df" % (colour_bytes // 4), data, colours_at),
+            # Keep complete RGBA quadwords; empty and partial-tail sections
+            # retain the original parser's permissive behavior.
+            colour_bytes = max(0, at + size - colours_at) // 16 * 16
+            if colour_bytes and colours_at + colour_bytes > len(data):
+                raise ValueError("material colours past end of buffer")
+            colours = struct.unpack_from("<%df" % (colour_bytes // 4), data, colours_at) if colour_bytes else ()
+            current = dict(kind=argument & 0xff, colours=colours,
                            packets=[])
             sections.append(current)
         elif tag == 3:
