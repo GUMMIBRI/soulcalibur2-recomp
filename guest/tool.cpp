@@ -2,8 +2,11 @@
 /* sc2_guest XBOX OTHER OUTPUT: the root.olk with Link (OTHER: the player's
    GameCube disc, .iso or .ciso) or Heihachi (the PlayStation 2 disc, .iso) in
    the guest's place, from the player's Xbox disc (image, or its root.olk).
-   The launcher does the same; this is for tests and scripts. */
+   The launcher does the same; this is for tests and scripts.
+   sc2_guest --import-textures PACK OUTPUT [MAP]: a Dolphin texture pack (its folder) made into the game's
+   (texture_pack.h), by the built-in map or MAP. */
 #include "build.h"
+#include "texture_pack.h"
 #include "sound.h"
 #include "vmp.h"
 
@@ -12,6 +15,7 @@
 #include <memory>
 #include <fstream>
 #include <iterator>
+#include <string>
 
 namespace {
 
@@ -37,6 +41,24 @@ int main(int argc, char **argv)
             std::fprintf(stderr, "sc2_guest: %s\n", error.what());
             return 1;
         }
+    }
+    if ((argc == 4 || argc == 5) && std::strcmp(argv[1], "--import-textures") == 0) {
+        try {
+            std::string map = guest::kDolphinTextureMap;
+            if (argc == 5) {
+                std::ifstream file(argv[4]);
+                map.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+            }
+            const guest::PackImport done = guest::import_dolphin_pack(argv[2], map, argv[3], [](size_t d, size_t t) {
+                if (d % 64 == 0 || d == t) std::fprintf(stderr, "\r%zu/%zu", d, t);
+            });
+            std::fprintf(stderr, "\n%zu textures written (%zu from one of two images), %zu not in the pack, %zu unreadable\n",
+                done.textures, done.partial, done.missing, done.failed);
+        } catch (const std::exception &error) {
+            std::fprintf(stderr, "sc2_guest: %s\n", error.what());
+            return 1;
+        }
+        return 0;
     }
     if (argc >= 4 && std::strcmp(argv[1], "--roster") == 0) {
         /* sc2_guest --roster XBOX_DISC OTHER_DISC [OTHER_DISC] OUTPUT: Link and Heihachi beside Spawn */

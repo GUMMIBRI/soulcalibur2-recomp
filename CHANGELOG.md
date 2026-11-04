@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **HD textures** ([#11](https://github.com/tmcleroy/soulcalibur2-recomp/issues/11)): the GameCube version's HD
+  texture pack for Dolphin (*Soulcalibur 2 Complete HD Textures*), imported from your own download on the launcher's
+  new Textures page and matched to the Xbox's textures (about 4,300 of them: characters, Link included, stages,
+  menus), drawn while **HD textures** is on (it also switches in the in-game menu, while playing). **Dump textures**
+  writes each texture the game draws to a folder, for making your own pack.
+
 ## 0.2.2-beta.1
 
 A fix for the game closing with "The game stopped with code 2" as a fight loads, and clearer messages when the game

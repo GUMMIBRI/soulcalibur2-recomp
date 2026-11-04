@@ -31,6 +31,7 @@ struct Settings {
     bool input_display = false, combo_readout = false, hit_boxes = false, frame_data = false;
     bool no_damage[2] = {false, false}, one_hit = false;   /* the cheats */
     bool fps_counter = false;
+    bool hd_textures = false, texture_dump = false;   /* textures/ and textures-dump/ beside settings.ini */
     bool online_ping = true, online_delay = false, online_hide_names = false;   /* (sc2_online.h) */
 };
 

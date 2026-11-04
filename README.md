@@ -69,6 +69,8 @@ steps a frame; H (or Black) hides the life bars and timer; F12 saves a screensho
 ## And
 
 - **Widescreen** (the game's own 16:9 mode) and **resolutions** up to 8x (5120x3840).
+- **HD textures**: the GameCube version's HD texture pack for Dolphin, from your own download, matched to the Xbox's
+  textures when you import it; or dump the game's textures and make your own.
 - **Shaders**: RetroArch's CRT and scanline shaders (CRT Royale, CRT Guest, CRT Lottes and more) at the Xbox's 480
   lines, or your own preset.
 - **An endless battle**: in any fight, the game plays both fighters for as long as you like (touch the controls to
