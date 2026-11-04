@@ -946,6 +946,11 @@ static bool sampleInput(std::uint32_t port, RecompInputGamepad *gamepad)
         applyScenePresses(gamepad);
         sampled = true;
     }
+    if (sc2::test_start_reads > 0) {
+        --sc2::test_start_reads;
+        gamepad->buttons |= RECOMP_INPUT_BUTTON_START;
+        sampled = true;
+    }
     static bool startHeld;
     const bool start = sampled && (gamepad->buttons & RECOMP_INPUT_BUTTON_START) != 0u;
     if (start != startHeld) {

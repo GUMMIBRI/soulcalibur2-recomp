@@ -682,16 +682,14 @@ static void swap(void)
     const uint32_t entry = recomp_runtime.registers.esp;
     recomp_d3d8_require_device();
     const uint32_t completed_bank = frame_state.swap_counter & 1u;
-    /* D3DSWAP_COPY 1, BYPASSCOPY 2 and FINISH 4 all present the back buffer
-       on the host; SC2 passes them where DOA2U passed 0. */
+    /* D3DSWAP_COPY 1 presents the back buffer as 0 does. BYPASSCOPY 2 and FINISH 4 leave the front buffer as it
+       was: SC2 swaps 2, 4, 2, 4... while it loads, holding the last frame on screen as its gamma ramp fades it
+       out; the back buffer meanwhile holds the next scene's first drawing (after a match, the versus screen's
+       background), which the Xbox never shows (#18). */
     const uint32_t flags = argument(entry, 0u);
     if (flags & ~7u) recomp_stop(2, "d3d8:swap-flags:%08x", flags);
-    static uint32_t named;
-    if (flags && !(named & 1u << flags)) {
-        named |= 1u << flags;
-        fprintf(stderr, "recomp d3d8: Swap flags %u presented as default\n", flags);
-    }
-    const RecompD3dFrameResult result = recomp_d3d_frame_swap(&frame_state, 0u);
+    RecompD3dFrameResult result = recomp_d3d_frame_swap(&frame_state, 0u);
+    result.command.data.present.keep_shown = (flags & 6u) != 0u;
     if (result.error != RECOMP_D3D_FRAME_OK) recomp_stop(2, "d3d8:swap:%u", (unsigned)result.error);
     for (uint32_t i = 0; i < 2u; ++i) load(&device_state.color[i], color_header(i), sizeof device_state.color[i]);
     if (recomp_d3d_device_swap_buffers(&device_state) != RECOMP_D3D_DEVICE_OK) recomp_stop(2, "d3d8:swap-headers");

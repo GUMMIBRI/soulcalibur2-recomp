@@ -119,7 +119,9 @@ general pixel program. It runs for minutes without a stop. Along the way:
   swap effect 3, flags 0x120); the adapter allocates them as the SDK would.
 - It clears its whole target as one rectangle and with a 0,16,640,448
   viewport (letterbox); the viewport case clears the whole target for now.
-- Swap takes COPY/BYPASSCOPY/FINISH flags, all presented as the default.
+- Swap takes COPY/BYPASSCOPY/FINISH flags. COPY presents as the default; BYPASSCOPY and FINISH leave the
+  picture on screen as it was (the presenter's `keep_shown`): while it loads, SC2 swaps 2, 4, 2, 4... and fades
+  the held frame out with the gamma ramp, the next scene's first drawing already in the back buffer (#18).
 - It spins on GetRasterStatus until the beam passes mid-frame, so the scan
   line is modelled from the guest clock (525 lines at 59.94 Hz).
 - BeginPush(count) returns the pointer in 5455 (no out parameter).
@@ -203,7 +205,8 @@ run. Two runner options avoid that:
 
 `SC2_TEST_KEYS=SWAP:WHAT,...` does at those Swaps what a key or the menu would:
 `save`, `load` (slot 1), `over` (start over), `record`, `replay`, `slow`, `pause`
-(the free camera's freeze, for pictures), `unlock`.
+(the free camera's freeze, for pictures), `unlock`, `start` (Start held on controller 1 for six reads:
+an Arcade win pose skipped at about Swap 3910 with `SC2_TEST_KO=1`).
 
 Two more test aids: `SC2_TEST_KO=1` empties player 2's health in fights (an
 Arcade run to the ending takes about eight minutes headless), and

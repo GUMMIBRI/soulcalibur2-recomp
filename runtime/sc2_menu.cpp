@@ -535,7 +535,7 @@ void OnPresent(uint32_t swap_counter)
     PlayKeys();
     /* (tests: SC2_TEST_KEYS=SWAP:WHAT,... does at those Swaps what a key or the menu would: save, load (slot 1),
        over (start over), record, replay, slow, fast (2x), pause, unlock, endless, skip: a press, hud: the HUD hidden or shown,
-       hd: HD textures on or off) */
+       start: Start held on controller 1 for six reads, hd: HD textures on or off) */
     if (const char *keys = std::getenv("SC2_TEST_KEYS")) {
         for (const char *p = keys; *p;) {
             char *end;
@@ -557,6 +557,7 @@ void OnPresent(uint32_t swap_counter)
                 else if (action == "unlock") TrainingUnlockAll();
                 else if (action == "endless") TrainingState().endless = !TrainingState().endless;
                 else if (action == "skip") test_skip = true;
+                else if (action == "start") test_start_reads = 6;
                 else if (action == "hud") recomp_scene_freeze_set_overlay_hidden(!recomp_scene_freeze_overlay_hidden());
                 else if (action == "hd") ApplyTextures(settings_path, !TexturesHd(), TexturesDump());
             }
@@ -579,6 +580,8 @@ void OnPresent(uint32_t swap_counter)
 }
 
 } // namespace
+
+int test_start_reads;
 
 bool textures_hd = false, textures_dump = false;   // (ApplyTextures)
 

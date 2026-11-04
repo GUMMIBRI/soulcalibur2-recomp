@@ -21,6 +21,9 @@ void SetShader(int choice);
 /* The speed chosen (the menu's Speed, - and =): game frames to a frame shown (1 at full speed; online, always 1) */
 double GameSpeed();
 
+/* Tests (SC2_TEST_KEYS SWAP:start): reads of controller 1 still to be given Start, counted down by the runner */
+extern int test_start_reads;
+
 /* Texture packs (the runtime's d3d_texture_replace.h): textures/ and textures-dump/ beside settings.ini, on or off,
    while playing too (the presenter makes its textures again). */
 void ApplyTextures(const std::string &settings_path, bool hd, bool dump);
