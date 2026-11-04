@@ -1369,8 +1369,19 @@ int main(int argc, char **argv)
             sc2_net_seeded = 1;
         }
     }
-    if (!(storageRoot.empty() ? recomp_save_initialize(recomp_disc_root_path)
-                              : recomp_save_initialize_storage(recomp_storage_root_path))) {
+    const auto saveInitialize = [&] {
+        return storageRoot.empty() ? recomp_save_initialize(recomp_disc_root_path)
+                                   : recomp_save_initialize_storage(recomp_storage_root_path);
+    };
+    bool saveReady = saveInitialize();
+    /* (a copy started over or again for online play: on Windows the copy before it is still ending as this one
+       starts, its hold on the save journal (opened for itself alone) with it, so this one asks again a while) */
+    for (int tries = 0; !saveReady && (netFresh || netAgain) && tries < 100; ++tries) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        saveReady = saveInitialize();
+        if (saveReady) std::fprintf(stderr, "online: the save journal opened after %d ms\n", (tries + 1) * 100);
+    }
+    if (!saveReady) {
         std::cerr << "recomp runner: save recovery failed; guest not started\n";
         return 2;
     }

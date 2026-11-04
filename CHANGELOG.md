@@ -4,8 +4,8 @@
 
 - **Online on Windows**: hosting closed the game when the other player came, and no match began. The host's game
   starts over for the match, and on Windows the new copy was given its arguments without quotes, so a path with a
-  space in it (the disc's own name has some) came apart and the copy never started. It now starts with each argument
-  quoted.
+  space in it (the game's own save folder has one) came apart and the copy never started. It now starts with each
+  argument quoted, and waits a moment for the copy before it to let go of the save.
 
 ## 0.2.0-beta.1
 
