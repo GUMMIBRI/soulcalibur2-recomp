@@ -74,13 +74,12 @@ const std::vector<recomp::FeatureInfo> &Features()
                 "Scanlines: strong", "Scanlines: OSSC", "xBRZ", "ScaleFX", "Your own"}},
         {"hd_textures", "Graphics", "HD textures",
             "The textures in the textures folder beside the game's settings drawn in place of the game's own: an HD "
-            "pack imported on the launcher's Textures page, or your own (named as Dump textures names them). Takes "
-            "effect when the game starts.",
+            "pack imported on the launcher's Textures page, or your own (named as Dump textures names them).",
             recomp::kFeatureEnhanced, {}},
         {"texture_dump", "Graphics", "Dump textures",
             "Each texture the game draws written once to textures-dump beside the game's settings, named by its "
             "pixels, for making a pack: an image of the same name (a DDS, any size) in the textures folder takes its "
-            "place. Takes effect when the game starts.",
+            "place.",
             0, {}},
         {"fps_counter", "Graphics", "FPS counter",
             "The frames shown each second, in the top right corner. The game runs at 60.", 0, {}},

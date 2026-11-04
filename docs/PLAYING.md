@@ -125,7 +125,7 @@ screenshots and the runtime's text are without the shader. A preset that cannot 
 ## HD textures
 
 The game draws textures from a `textures` folder beside your settings (below) in place of its own, while **HD
-textures** is on (the Features page, Graphics; it takes effect when the game starts).
+textures** is on (the Features page, Graphics, or the in-game menu: it switches while playing).
 
 - **The GameCube's HD pack**: *Soulcalibur 2 Complete HD Textures*, an AI upscale (ESRGAN, 4x) made for Dolphin and
   the GameCube disc (GRSEAF), shared on the
@@ -138,6 +138,8 @@ textures** is on (the Features page, Graphics; it takes effect when the game sta
 - **Your own**: turn on **Dump textures** and play: each texture the game draws is written once to `textures-dump`,
   named by its pixels (16 hex digits, `.dds`). An image of the same name in `textures` (a DDS: DXT1, DXT3, DXT5 or
   32-bit BGRA, any size, with mip levels or without) takes its place.
+
+![A paused fight at 4x, part of the picture at full size: the game's textures (left) and the GameCube HD pack's (right)](screenshots/hd-textures.jpg)
 
 ## Endless battle
 

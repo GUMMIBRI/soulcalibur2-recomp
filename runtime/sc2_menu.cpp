@@ -5,6 +5,7 @@
    (recomp_d3d_presenter_read_frame) and the presenter shows that picture
    instead. A key or button the player gave the game does only that. */
 #include "sc2_menu.h"
+#include "d3d_texture_replace.h"
 #include "sc2_touch.h"
 
 #include "sc2_settings.h"
@@ -31,6 +32,7 @@ extern "C" {
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <filesystem>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -67,6 +69,8 @@ int FeatureValue(const std::string &name)
     if (name == "no_damage_p2") return training.no_damage[1];
     if (name == "one_hit") return training.one_hit;
     if (name == "fps_counter") return training.fps_counter;
+    if (name == "hd_textures") return TexturesHd();
+    if (name == "texture_dump") return TexturesDump();
     if (name == "shader") return shader_choice;
     if (name == "dummy") return static_cast<int>(training.dummy);
     if (name == "online_ping") return online.ping;
@@ -90,6 +94,8 @@ void SetFeatureValue(const std::string &name, int value)
     else if (name == "no_damage_p2") training.no_damage[1] = value != 0;
     else if (name == "one_hit") training.one_hit = value != 0;
     else if (name == "fps_counter") training.fps_counter = value != 0;
+    else if (name == "hd_textures") ApplyTextures(settings_path, value != 0, TexturesDump());
+    else if (name == "texture_dump") ApplyTextures(settings_path, TexturesHd(), value != 0);
     else if (name == "shader") SetShader(value);
     else if (name == "dummy") training.dummy = static_cast<Dummy>(value);
     else if (name == "online_ping") online.ping = value != 0;
@@ -528,7 +534,8 @@ void OnPresent(uint32_t swap_counter)
     ApplyTraining(swap_counter);
     PlayKeys();
     /* (tests: SC2_TEST_KEYS=SWAP:WHAT,... does at those Swaps what a key or the menu would: save, load (slot 1),
-       over (start over), record, replay, slow, fast (2x), pause, unlock, endless, skip: a press, hud: the HUD hidden or shown) */
+       over (start over), record, replay, slow, fast (2x), pause, unlock, endless, skip: a press, hud: the HUD hidden or shown,
+       hd: HD textures on or off) */
     if (const char *keys = std::getenv("SC2_TEST_KEYS")) {
         for (const char *p = keys; *p;) {
             char *end;
@@ -551,6 +558,7 @@ void OnPresent(uint32_t swap_counter)
                 else if (action == "endless") TrainingState().endless = !TrainingState().endless;
                 else if (action == "skip") test_skip = true;
                 else if (action == "hud") recomp_scene_freeze_set_overlay_hidden(!recomp_scene_freeze_overlay_hidden());
+                else if (action == "hd") ApplyTextures(settings_path, !TexturesHd(), TexturesDump());
             }
             p = next ? next + 1 : end + std::strlen(end);
         }
@@ -571,6 +579,24 @@ void OnPresent(uint32_t swap_counter)
 }
 
 } // namespace
+
+bool textures_hd = false, textures_dump = false;   // (ApplyTextures)
+
+void ApplyTextures(const std::string &settings_path, bool hd, bool dump)
+{
+    textures_hd = hd;
+    textures_dump = dump;
+    if (settings_path.empty()) {
+        recomp_d3d_textures_configure(nullptr, nullptr);   // (RECOMP_TEXTURES, RECOMP_TEXTURE_DUMP)
+        return;
+    }
+    const std::filesystem::path folder = std::filesystem::u8path(settings_path).parent_path();
+    recomp_d3d_textures_configure(hd ? (folder / "textures").u8string().c_str() : nullptr,
+        dump ? (folder / "textures-dump").u8string().c_str() : nullptr);
+}
+
+bool TexturesHd() { return textures_hd; }
+bool TexturesDump() { return textures_dump; }
 
 double GameSpeed()
 {
