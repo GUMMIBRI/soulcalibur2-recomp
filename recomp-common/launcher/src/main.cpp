@@ -33,6 +33,7 @@
 #include <vector>
 
 #include "app.h"
+#include "proxy.h"
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlrenderer3.h"
 #include "imgui_internal.h"
@@ -279,6 +280,7 @@ int main(int argc, char** argv) {
             page_id = argv[++i];
         }
     }
+    recomp::UseSystemProxy();  // (Windows' proxy, for the curl the launcher and the game start: proxy.h)
     SDL_SetAppMetadata(LAUNCHER_GAME_NAME, "0.1", LAUNCHER_APP_ID ".launcher");
     if (!prepare_folders(screenshot_prefix.empty())) {  // (portable mode's folder; pictures for a test ask nothing)
         SDL_Quit();

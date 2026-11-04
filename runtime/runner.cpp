@@ -1383,6 +1383,7 @@ int main(int argc, char **argv)
     }
     if (!saveReady) {
         std::cerr << "recomp runner: save recovery failed; guest not started\n";
+        std::cerr << "recomp stop: save:journal-unreadable (the save folder couldn't be opened) exit_code=2\n";  // (for the launcher)
         return 2;
     }
     const RecompMemoryRegion region = {0u, memory.size(), memory.data()};
