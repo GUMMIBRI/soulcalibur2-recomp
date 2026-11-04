@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <fstream>
 #include <iterator>
 #include <map>
@@ -24,6 +25,7 @@
 #endif
 
 #include "folders.h"
+#include "gamepads.h"
 #include "layout.h"
 #include "online.h"
 #include "steam.h"
@@ -78,8 +80,9 @@ std::filesystem::path base_path() {
         return std::filesystem::path(info.dli_fname).parent_path();
     }
 #endif
+    // (SDL's paths are UTF-8: by their wide name on Windows, where a folder with an accent is not in the system's code page)
     const char* base = SDL_GetBasePath();
-    return base ? std::filesystem::path(base) : std::filesystem::current_path();
+    return base ? std::filesystem::u8path(base) : std::filesystem::current_path();
 }
 
 void wake() {
@@ -109,7 +112,8 @@ std::filesystem::path program_path(const std::string& exe) {
 }
 
 // The system's folder for a game's (or a collection's) things, named by it (SDL_GetPrefPath makes it)
-std::filesystem::path system_folder(const char* name) {
+std::filesystem::path system_folder(const char* game_name) {
+    const std::string name = recomp::FolderName(game_name);  // (what Windows takes as a folder's name)
 #ifdef __ANDROID__
     // (SDL_GetPrefPath is one folder for the whole app there: the app's own folder on the shared storage, which a
     // computer sees over USB in Android/data, with a folder for each name in it)
@@ -124,8 +128,8 @@ std::filesystem::path system_folder(const char* name) {
         return folder;
     }
 #endif
-    char* path = SDL_GetPrefPath("", name);
-    std::filesystem::path folder = path ? std::filesystem::path(path) : base_path() / recomp::kPortableFolder / std::filesystem::u8path(name);
+    char* path = SDL_GetPrefPath("", name.c_str());
+    std::filesystem::path folder = path ? std::filesystem::u8path(path) : base_path() / recomp::kPortableFolder / std::filesystem::u8path(name);
     SDL_free(path);
     return folder;
 }
@@ -137,7 +141,7 @@ std::filesystem::path player_folder(const char* name, const char* home_env) {
         return home;
     }
     if (std::filesystem::path portable = recomp::PortableFolder(base_path()); !portable.empty()) {
-        return portable / std::filesystem::u8path(name);
+        return portable / std::filesystem::u8path(recomp::FolderName(name));
     }
     return system_folder(name);  // where the game keeps settings.ini too
 }
@@ -299,7 +303,7 @@ bool prepare_folders(bool ask) {
     // The first time: what the system's folders have may be copied here (never moved, never written over)
     std::vector<std::pair<std::filesystem::path, std::filesystem::path>> copies;
     auto consider = [&](const char* name) {
-        const std::filesystem::path to = portable / std::filesystem::u8path(name);
+        const std::filesystem::path to = portable / std::filesystem::u8path(recomp::FolderName(name));
         for (const auto& copy : copies) {
             if (copy.second == to) {
                 return;
@@ -349,6 +353,125 @@ bool prepare_folders(bool ask) {
     return true;
 }
 
+// The game's log is written over at each start: the log of a run that stopped with an error is kept beside it
+// (logs/stopped-<when>.log, the newest five), to send with a report
+StoppedLog keep_stopped_log(const std::filesystem::path& folder) {
+    namespace fs = std::filesystem;
+    StoppedLog kept;
+    const fs::path logs = folder / "logs";
+    std::error_code error;
+    if (!fs::exists(logs / "game.log", error)) {
+        return kept;
+    }
+    std::time_t now = std::time(nullptr);
+    std::tm parts{};
+#ifdef _WIN32
+    localtime_s(&parts, &now);
+#else
+    localtime_r(&now, &parts);
+#endif
+    char name[64];
+    std::strftime(name, sizeof name, "stopped-%Y-%m-%d-%H%M%S.log", &parts);
+    fs::copy_file(logs / "game.log", logs / name, fs::copy_options::overwrite_existing, error);
+    if (error) {
+        return kept;
+    }
+    kept.path = logs / name;
+    // (the newest five kept; the names sort by time)
+    std::vector<fs::path> old;
+    for (const auto& entry : fs::directory_iterator(logs, error)) {
+        const std::string file = entry.path().filename().u8string();
+        if (file.rfind("stopped-", 0) == 0 && entry.path().extension() == ".log") {
+            old.push_back(entry.path());
+        }
+    }
+    std::sort(old.begin(), old.end());
+    for (size_t i = 0; i + 5 < old.size(); i++) {
+        fs::remove(old[i], error);
+    }
+    // What stopped it, when the runtime said ("recomp stop: <id> ..."): its last such line
+    std::ifstream in(kept.path, std::ios::binary);
+    std::string line;
+    while (std::getline(in, line)) {
+        const size_t at = line.find("recomp stop: ");
+        if (at != std::string::npos) {
+            std::string id = line.substr(at + 13);
+            id = id.substr(0, id.find(' '));
+            while (!id.empty() && (id.back() == '\r' || id.back() == '\n')) {
+                id.pop_back();
+            }
+            kept.reason = id;
+        }
+    }
+    return kept;
+}
+
+// "<name> stopped with code N (reason)"
+static std::string stopped_text(const std::string& name, int code, const std::string& reason) {
+    return name + " stopped with code " + std::to_string(code) + (reason.empty() ? std::string() : " (" + reason + ")");
+}
+
+// What a code means, for a player: a crash (a signal, or a Windows exception), or the runtime stopping on
+// purpose (its "recomp stop: <area>:..." line names the part of the game it was in), or "" when not known
+static std::string stopped_meaning(int code, const std::string& reason) {
+    if (!reason.empty()) {
+        static const std::pair<const char*, const char*> kAreas[] = {
+            {"dsound:", "its sound"}, {"audio", "its sound"}, {"d3d", "its graphics"}, {"input:", "the controllers"},
+            {"memory:", "its memory"}, {"kernel:", "the Xbox system it runs on"}, {"xapi:", "the Xbox system it runs on"},
+            {"import:", "the Xbox system it runs on"}, {"save", "its saves"}, {"file", "reading the game's files"},
+        };
+        std::string area = "it";
+        for (const auto& [prefix, name] : kAreas) {
+            if (reason.rfind(prefix, 0) == 0) {
+                area = name;
+                break;
+            }
+        }
+        return "The game met something in " + area + " that this version can't handle yet, so it closed itself "
+               "rather than go on wrong. It's a bug in the port, not in your copy of the game.";
+    }
+    if (code < 0 && code > -64) {
+        const int signal = -code;
+        const char* what = signal == 11 || signal == 10 ? " (a bad memory access)"
+                           : signal == 6             ? " (it gave up on an error)"
+                           : signal == 9             ? " (it was killed, perhaps by the system for using too much memory)"
+                           : signal == 4             ? " (an instruction it couldn't run)"
+                           : signal == 8             ? " (a bad calculation)"
+                                                     : "";
+        return std::string("The game crashed") + what + ". It's a bug in the port, not in your copy of the game.";
+    }
+    const unsigned int windows = static_cast<unsigned int>(code);
+    if (windows >= 0xC0000000u) {
+        char hex[16];
+        std::snprintf(hex, sizeof hex, "0x%08X", windows);
+        const char* what = windows == 0xC0000005u   ? " (a bad memory access)"
+                           : windows == 0xC00000FDu ? " (it ran out of stack)"
+                           : windows == 0xC0000409u ? " (it gave up on an error)"
+                           : windows == 0xC0000135u ? " (a file it needs, a .dll, is missing beside it)"
+                                                    : "";
+        return std::string("The game crashed") + what + ", Windows error " + hex +
+               ". It's a bug in the port, not in your copy of the game.";
+    }
+    return std::string();
+}
+
+#ifdef LAUNCHER_ISSUES_REPO
+// A new GitHub issue in the port's repository, its title filled in
+static std::string issue_url(const std::string& title) {
+    std::string url = "https://github.com/" LAUNCHER_ISSUES_REPO "/issues/new?title=";
+    for (unsigned char c : title) {
+        if (std::isalnum(c) || std::strchr("-_.~", c)) {
+            url += static_cast<char>(c);
+        } else {
+            char escaped[4];
+            std::snprintf(escaped, sizeof escaped, "%%%02X", c);
+            url += escaped;
+        }
+    }
+    return url;
+}
+#endif
+
 int play_directly(const std::string& id, const std::vector<std::string>& extra) {
     // Straight into the game with the file chosen earlier (e.g. a Steam shortcut in Game Mode).
     std::vector<Target> all = targets();
@@ -389,7 +512,55 @@ int play_directly(const std::string& id, const std::vector<std::string>& extra) 
     while (game.running()) {
         SDL_Delay(100);
     }
-    return game.exit_code();
+    // (stopped with an error: no launcher window is open to say so, so a box says what to send and where)
+    const int code = game.exit_code();
+    const bool next = the_collection() && std::any_of(the_collection()->multi.begin(), the_collection()->multi.end(),
+                                                       [&](const launcher::MultiMode& m) { return m.next_code == code; });
+    if (code != 0 && !next) {
+        const StoppedLog kept = keep_stopped_log(target->folder);
+        std::string text = stopped_text(target->name, code, kept.reason) + ".";
+        if (std::string meaning = stopped_meaning(code, kept.reason); !meaning.empty()) {
+            text += "\n\n" + meaning;
+        }
+        if (!kept.path.empty()) {
+#ifdef LAUNCHER_ISSUES_REPO
+            text += "\n\nTo report it, open an issue on GitHub, say what you were doing, and attach this run's log:\n" +
+                    kept.path.u8string();
+#else
+            text += "\n\nTo report it, say what you were doing and send this run's log:\n" + kept.path.u8string();
+#endif
+        }
+        std::fprintf(stderr, "%s\n", text.c_str());
+        std::vector<SDL_MessageBoxButtonData> buttons;
+#ifdef LAUNCHER_ISSUES_REPO
+        buttons.push_back({0, 1, "Report on GitHub"});
+#endif
+#ifndef __ANDROID__
+        if (!kept.path.empty()) {
+            buttons.push_back({0, 2, "Show the log"});
+        }
+#endif
+        buttons.push_back({SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT | SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Close"});
+        const std::string title = target->name;
+        SDL_MessageBoxData box{};
+        box.flags = SDL_MESSAGEBOX_ERROR;
+        box.title = title.c_str();
+        box.message = text.c_str();
+        box.numbuttons = static_cast<int>(buttons.size());
+        box.buttons = buttons.data();
+        int chosen = 0;
+        if (SDL_ShowMessageBox(&box, &chosen)) {
+#ifdef LAUNCHER_ISSUES_REPO
+            if (chosen == 1) {
+                SDL_OpenURL(issue_url(stopped_text(target->name, code, kept.reason)).c_str());
+            }
+#endif
+            if (chosen == 2) {
+                SDL_OpenURL(file_url(kept.path.parent_path()).c_str());
+            }
+        }
+    }
+    return code;
 }
 
 std::filesystem::path App::Slot::program() const {
@@ -409,6 +580,8 @@ App::App(SDL_Window* window)
       program_folder_(base_path()),
       about_(the_description()) {
     prefs_.load();
+    // (controllers SDL doesn't know: gamecontrollerdb.txt beside the launcher or in its folder, as the game reads it)
+    recomp::AddGamepadMappings({program_folder_, folder_});
     for (const Target& target : targets()) {
         auto slot = std::make_unique<Slot>(target.folder / "settings.ini");
         slot->about = target.about;
@@ -475,12 +648,12 @@ App::App(SDL_Window* window)
             break;
         }
     }
-    bindings_ = recomp::LoadBindings(slots_[first]->settings.path().string(), shared_table());
+    bindings_ = recomp::LoadBindings(slots_[first]->settings.path().u8string(), shared_table());
     // (and each game's own, for those given one)
     own_bindings_.resize(slots_.size());
     for (size_t which = 0; which < slots_.size(); which++) {
         if (own_layout(which)) {
-            own_bindings_[which] = recomp::LoadBindings(slots_[which]->settings.path().string(), slots_[which]->about->bindings);
+            own_bindings_[which] = recomp::LoadBindings(slots_[which]->settings.path().u8string(), slots_[which]->about->bindings);
         }
     }
 #ifdef LAUNCHER_UPDATE_REPO
@@ -947,7 +1120,7 @@ void App::choose_game_file(size_t which) {
     return;
 #endif
     const Slot& one = *slots_[which];
-    std::string start = one.file_path.empty() ? std::string() : std::filesystem::path(one.file_path).parent_path().string();
+    std::string start = one.file_path.empty() ? std::string() : std::filesystem::u8path(one.file_path).parent_path().u8string();
     picked_for_ = which;
     SDL_ShowOpenFileDialog(
         [](void* self, const char* const* files, int) {
@@ -1117,7 +1290,10 @@ void App::play(size_t which, const std::vector<std::string>& extra) {
     target.folder = one.folder;
     std::vector<std::string> arguments = arguments_for(prefs_, target);
     arguments.insert(arguments.end(), extra.begin(), extra.end());
-    one.game.start(one.program(), arguments, one.folder, one.play_error, one.folder / "logs" / "game.log");
+    one.stopped_log.clear();
+    one.stopped_reason.clear();
+    // (seen as running from here: a game that stops before the next frame still has its end noticed, and its log kept)
+    one.was_running = one.game.start(one.program(), arguments, one.folder, one.play_error, one.folder / "logs" / "game.log");
 }
 
 bool App::toggle_on(const Slot& one, const launcher::Toggle& toggle) const {
@@ -1346,6 +1522,11 @@ void App::frame() {
             after_game(one);
             show_focus_ = interactive_ && SDL_HasGamepad();  // (back from the game with a gamepad in hand)
             one.was_running = false;
+            if (one.game.exit_code() != 0 &&
+                !(collection_ && std::any_of(collection_->multi.begin(), collection_->multi.end(),
+                                             [&](const launcher::MultiMode& m) { return m.next_code == one.game.exit_code(); }))) {
+                keep_stopped_log(one);
+            }
             if (multi_.mode >= 0 && multi_.at < multi_.games.size() && multi_.games[multi_.at] == which) {
                 multi_after(one.game.exit_code() == collection_->multi[static_cast<size_t>(multi_.mode)].next_code);
             }
@@ -1936,11 +2117,69 @@ bool App::play_button(size_t which, float width) {
     } else if (!one.game.running() && one.game.exit_code() != 0 &&
                !(collection_ && std::any_of(collection_->multi.begin(), collection_->multi.end(),
                                             [&](const launcher::MultiMode& m) { return m.next_code == one.game.exit_code(); }))) {
-        ui::gap(10);
-        std::string text = "The game stopped with code " + std::to_string(one.game.exit_code()) + ".";
-        ui::text(text.c_str(), Font::Regular, ui::size::kDetail, p.danger, width);
+        stopped_note(one, width);
     }
     return ready;
+}
+
+void App::keep_stopped_log(Slot& one) {
+    StoppedLog kept = ::keep_stopped_log(one.folder);
+    one.stopped_log = kept.path;
+    one.stopped_reason = kept.reason;
+}
+
+// A game that stopped with an error: the code and the reason, the log to send, and where to report it
+void App::stopped_note(Slot& one, float width) {
+    const ui::Palette& p = ui::palette();
+    ui::gap(10);
+    std::string text = stopped_text(collection_ ? one.name : std::string("The game"), one.game.exit_code(), one.stopped_reason) + ".";
+    ui::text(text.c_str(), Font::Regular, ui::size::kDetail, p.danger, width);
+    if (std::string meaning = stopped_meaning(one.game.exit_code(), one.stopped_reason); !meaning.empty()) {
+        ui::gap(6);
+        ui::text(meaning.c_str(), Font::Regular, ui::size::kDetail, p.text, width);
+    }
+    if (one.stopped_log.empty()) {
+        return;
+    }
+    ui::gap(6);
+#ifdef LAUNCHER_ISSUES_REPO
+    std::string help = "To report it, open an issue on GitHub (Report below), say what you were doing, and attach this "
+                       "run's log: " + one.stopped_log.u8string();
+#else
+    std::string help = "To report it, say what you were doing and send this run's log: " + one.stopped_log.u8string();
+#endif
+#ifdef __ANDROID__
+    help += " (a computer sees it over USB, in Android/data)";
+#endif
+    ui::text(help.c_str(), Font::Regular, ui::size::kDetail, p.secondary, width);
+    ImGui::PushID(one.id.c_str());
+    bool row = false;
+    const float row_left = ImGui::GetCursorScreenPos().x;
+#ifndef __ANDROID__
+    ui::gap(8);
+    if (ui::button("Show the log", Kind::Secondary, 150.0f) && interactive_) {
+        SDL_OpenURL(file_url(one.stopped_log.parent_path()).c_str());
+    }
+    row = true;
+#endif
+#ifdef LAUNCHER_ISSUES_REPO
+    // (beside Show the log when both fit the page's width, as buttons grow to their labels; under it if not)
+    ui::push_font(Font::Semibold, ui::size::kBody);
+    const float report_width = std::max(px(180.0f), ImGui::CalcTextSize("Report on GitHub").x + px(40));
+    ui::pop_font();
+    if (row && ImGui::GetItemRectMax().x + px(10) + report_width <= row_left + width) {
+        ImGui::SameLine(0.0f, px(10));
+    } else {
+        ui::gap(8);
+    }
+    if (ui::button("Report on GitHub", Kind::Secondary, 180.0f) && interactive_) {
+        SDL_OpenURL(issue_url(stopped_text(collection_ ? one.name : std::string(LAUNCHER_GAME_NAME), one.game.exit_code(),
+                                           one.stopped_reason)).c_str());
+    }
+#endif
+    (void)row;
+    (void)row_left;
+    ImGui::PopID();
 }
 
 void App::play_cards(size_t which, float width, bool ready) {
@@ -2931,10 +3170,11 @@ void App::library_page(float width) {
     games.end();
     // (what went wrong with each game's last start)
     for (const auto& one : slots_) {
-        std::string text = !one->play_error.empty() ? one->name + ": " + one->play_error
-                           : !one->game.running() && one->game.exit_code() != 0
-                               ? one->name + " stopped with code " + std::to_string(one->game.exit_code()) + "."
-                               : std::string();
+        if (one->play_error.empty() && !one->game.running() && one->game.exit_code() != 0) {
+            stopped_note(*one, width);
+            continue;
+        }
+        std::string text = !one->play_error.empty() ? one->name + ": " + one->play_error : std::string();
         if (!text.empty()) {
             ui::gap(10);
             ui::text(text.c_str(), Font::Regular, ui::size::kDetail, p.danger, width);
@@ -3009,23 +3249,29 @@ void App::update_card(float width, bool top, bool always) {
                         : news                            ? "Version " + status.version + " is out"
                                                           : "Version " LAUNCHER_VERSION;
     std::string detail = status.state == State::Idle ? std::string("Not checked yet.") : status.message;
-    if (status.state == State::Available && running) {
+    if ((status.state == State::Available || status.state == State::Downloaded) && running) {
         detail += " Quit the games that are running first.";
     }
     row(width, title.c_str(), detail.c_str(), news ? 250.0f : 150.0f, 36.0f, [&] {
         switch (status.state) {
         case State::Available:
         case State::NotInstalled:
+        case State::Downloaded:
             // (the release's page: what is new, and its downloads)
             if (ui::button(status.state == State::NotInstalled ? "Releases" : "What's new", Kind::Secondary, 120.0f, !status.notes_url.empty()) &&
                 interactive_) {  // (pictures for a test open nothing)
                 SDL_OpenURL(status.notes_url.c_str());
             }
             ImGui::SameLine(0.0f, px(10));
-            if (!status.download_url.empty()) {
-                // (Android: the new APK, which the browser downloads, for the system's installer)
+            if (status.state == State::NotInstalled && !status.download_url.empty()) {
+                // (Android, a release without checksums: the new APK, which the browser downloads, for the system's installer)
                 if (ui::button("Download", Kind::Primary, 120.0f) && interactive_) {
                     SDL_OpenURL(status.download_url.c_str());
+                }
+            } else if (status.state == State::Downloaded) {
+                // (Android: the installer again, if the player said not now or had to allow it in Settings first)
+                if (ui::button("Install", Kind::Primary, 120.0f, !running)) {
+                    updater_->install();
                 }
             } else if (ui::button("Update", Kind::Primary, 120.0f, status.state == State::Available && !running)) {
                 updater_->install();
@@ -3065,7 +3311,8 @@ bool App::update_news() const {
 #ifdef LAUNCHER_UPDATE_REPO
     using State = launcher::Updater::State;
     const State state = updater_->status().state;
-    return state == State::Available || state == State::Installing || state == State::Installed || state == State::NotInstalled;
+    return state == State::Available || state == State::Installing || state == State::Installed || state == State::NotInstalled ||
+           state == State::Downloaded;
 #else
     return false;
 #endif

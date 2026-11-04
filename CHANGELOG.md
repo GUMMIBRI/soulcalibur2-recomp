@@ -4,8 +4,34 @@
 
 - **HD textures** ([#11](https://github.com/tmcleroy/soulcalibur2-recomp/issues/11)): the GameCube version's HD
   texture pack for Dolphin (*Soulcalibur 2 Complete HD Textures*), imported from your own download on the launcher's
-  new Textures page and matched to the Xbox's textures (about 4,300 of them: characters, Link included, stages, menus), drawn while
-  **HD textures** is on (it also switches in the in-game menu, while playing). **Dump textures** writes each texture the game draws to a folder, for making your own pack.
+  new Textures page and matched to the Xbox's textures (about 4,300 of them: characters, Link included, stages,
+  menus), drawn while **HD textures** is on (it also switches in the in-game menu, while playing). **Dump textures**
+  writes each texture the game draws to a folder, for making your own pack.
+
+## 0.2.2-beta.1
+
+A fix for the game closing with "The game stopped with code 2" as a fight loads, and clearer messages when the game
+stops: what happened, in plain words, which log to send and where. Both players need this version to play each
+other online.
+
+- **No more "code 2" as a fight loads** ([#20](https://github.com/tmcleroy/soulcalibur2-recomp/issues/20),
+  [#22](https://github.com/tmcleroy/soulcalibur2-recomp/issues/22)): the game closed itself when a sound reached a
+  piece of data it couldn't decode (seen before Inferno in Arcade and in Weapon Master). That piece now plays as
+  silence, as on the Xbox, and the game goes on.
+- **When the game stops, the launcher says why and what to do**: what the code means in plain words (a part of the
+  game this version can't handle yet, or a crash), the log of that run kept as `logs/stopped-<date-time>.log` (the
+  game's log is written over at every start), **Show the log**, and **Report on GitHub**, which opens a new issue
+  with its title filled in. Started straight from a Steam shortcut, the game shows the same in a box.
+
+## 0.2.1-beta.1
+
+Online play on Windows works: hosting no longer closes the game when the other player comes. Both players need
+this version to play each other online.
+
+- **Online on Windows**: hosting closed the game when the other player came, and no match began. The host's game
+  starts over for the match, and on Windows the new copy was given its arguments without quotes, so a path with a
+  space in it (the game's own save folder has one) came apart and the copy never started. It now starts with each
+  argument quoted, and waits a moment for the copy before it to let go of the save.
 
 ## 0.2.0-beta.1
 
