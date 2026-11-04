@@ -116,7 +116,13 @@ def block(data, at):
         if tag == 0:
             return sections
         if tag == 7:
-            current = dict(kind=argument & 0xff, colours=struct.unpack_from("<%df" % ((size - 16) // 4), data, at + 16),
+            # Payload quadwords align to the model, not the command. A command
+            # at +8 has eight padding/header bytes, not sixteen (Heihachi hair).
+            colours_at = (at + 4 + 15) & ~15
+            colour_bytes = at + size - colours_at
+            if colour_bytes <= 0 or colour_bytes % 16 or at + size > len(data):
+                raise ValueError("invalid aligned material payload")
+            current = dict(kind=argument & 0xff, colours=struct.unpack_from("<%df" % (colour_bytes // 4), data, colours_at),
                            packets=[])
             sections.append(current)
         elif tag == 3:

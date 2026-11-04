@@ -217,7 +217,7 @@ parts 1 and 3-11, weapon records, both moveset packs. What converts:
   at +0x18 is 4096 for 48 kHz; 32-byte sounds are placeholders. Converted
   audio and the Xbox's own correlate in spectrum (0.8) but not sample by
   sample: the Xbox's are separate encodes of the same recordings.
-- **Strings**: from SLUS_206.43 (Heihachi, 平八, HEIHACHI, Iron Fist,
+- **Strings**: from SLUS_206.43 (Heihachi, Ã¥Â¹Â³Ã¥â€¦Â«, HEIHACHI, Iron Fist,
   Japan?, 75), written over Spawn's at start (`--guest-heihachi`).
 
 In game: Heihachi is picked in the guest's place, fights in Practice, and
@@ -396,3 +396,27 @@ launcher's Guest page asks for a rebuild when a player's file has another number
 and online play compares it with the file's size (`runner.cpp`, the match's build), so two players whose guests came
 from different releases are told so rather than refused as "different builds". Version 1 is the output of
 2026-11-01 (c141074). The Python builders (`tools/guests`) write no stamp.
+
+## PS2 material alignment correction (2026-11-03)
+
+Tag-7 material payloads start at the next 16-byte boundary after the four-byte
+command header, relative to the model. They do not always start 16 bytes after
+the command. Heihachi's translucent hair command at model offset 0x1d18 is
+72 bytes long, with its 16 floats at 0x1d20. Both converters previously read
+from 0x1d28, dropping two floats and padding the end with zeros.
+
+That produced cyan ambient RGB (0,1,1), yellow diffuse RGB (1,1,0.5), alpha
+0.431, negative specular components, and power 2. Correct decoding restores
+ambient (0,0,0), diffuse (1,1,1,1), specular (0.5,0.431,0.38), and power about
+20 from the original PS2 material. No texture recoloring or light suppression
+is involved. Natural stage lighting and the source's warm highlights remain.
+
+The C++ and Python parsers now align the payload and reject malformed lengths.
+Guest cache version is 2. Synthetic tests cover all four word alignments and
+truncation. Rebuilding the user's combined roster changed only 25 material
+bytes in each of four Heihachi model variants (/4/1021,1022,1029,1030); every
+other archive entry, model geometry, and texture remained byte-identical.
+
+Regression commands: `python tools/test_ps2_material.py`; compile
+`tools/test_ps2_material.cpp` against the guest libraries to test the production
+C++ parser as well.

@@ -166,7 +166,13 @@ std::vector<Section> block(const Bytes &data, size_t at)
         if (tag == 7) {
             Section s;
             s.kind = argument & 0xff;
-            for (size_t k = 0; k < (size_t(size) - 16) / 4; ++k) s.colours.push_back(f32(data, at + 16 + 4 * k));
+            // The float payload is aligned in the model, not relative to this
+            // command. Heihachi's translucent hair has a command at +8 mod 16.
+            const size_t colours_at = (at + 4 + 15) & ~size_t(15);
+            const size_t end = at + size;
+            if (end <= colours_at || end > data.size() || (end - colours_at) % 16)
+                throw Error("invalid aligned material payload");
+            for (size_t p = colours_at; p < end; p += 4) s.colours.push_back(f32(data, p));
             sections.push_back(std::move(s));
             current = &sections.back();
         } else if (tag == 3) {

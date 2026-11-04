@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Heihachi hair lighting**: correct PS2 material parsing so white hair no longer receives incorrect colored highlights.
+
 ## 0.2.0-beta.1
 
 Soulcalibur II on Android phones and tablets, sharper pictures for 4K screens (up to 8x the Xbox's resolution),
