@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "free_camera_adapter.h"
+#include "sc2_fighter.h"
 #include "d3d8_adapter.h"
 #include "free_camera.h"
 #include "input_host_win32.h"
@@ -62,9 +63,9 @@ enum {
     ANALOG_PRESSED = 0x20u,
     STEP_REPEAT_AFTER_MS = 500u,
     /* Each fighter's position (x, y, z) at the player record's +0x2920:
-       player 1's record at 0x399220, player 2's 0x10E60 after. */
-    FIGHTER_POSITION = 0x00399220u + 0x2920u,
-    FIGHTER_STRIDE = 0x00010E60u,
+       player 1's record at 0x399220, player 2's 0x10E60 after (sc2_fighter.h). */
+    FIGHTER_POSITION = SC2_FIGHTER_RECORD + SC2_FIGHTER_FIELD(0x2920u),
+    FIGHTER_STRIDE = SC2_FIGHTER_STRIDE,
     FIGHTERS = 2u,
 };
 

@@ -32,9 +32,28 @@ EXTRA_CMAKE = os.environ.get("SC2_CMAKE_ARGS", "").split()
 LIFTER = ROOT / "tools/xboxrecomp"
 SHARED = ROOT / "third_party/doa2u-re"
 PRIVATE = ROOT / "private"
-PROGRAM = PRIVATE / "program"
-XBE = PRIVATE / "disc/Default.xbe"
-XBE_SHA256 = "7ce12851850ab46766f77c612b251afe7c8bd81f879e11b4836bdf766be542c6"
+# --pal: the PAL (Europe, Australia) disc's executable, private/disc-pal/Default.xbe, lifted into
+# private/program-pal and built with runtime/ rewritten to its addresses (tools/sc2/pal_port.py: every address
+# literal through tools/sc2/pal_addresses.txt) as build/runner-pal.
+PAL = "--pal" in sys.argv
+if PAL:
+    sys.argv.remove("--pal")
+    sys.path.insert(0, str(ROOT / "tools/sc2"))
+    import pal_port
+PROGRAM = PRIVATE / ("program-pal" if PAL else "program")
+XBE = PRIVATE / ("disc-pal/Default.xbe" if PAL else "disc/Default.xbe")
+XBE_SHA256 = pal_port.PAL_XBE_SHA256 if PAL else "7ce12851850ab46766f77c612b251afe7c8bd81f879e11b4836bdf766be542c6"
+SEEDS = ROOT / ("tools/sc2/seed_functions_pal.json" if PAL else "tools/sc2/seed_functions.json")
+BUILD = "build/%s-pal" if PAL else "build/%s"
+RUNTIME_OWN = ROOT / "runtime"
+
+
+def runtime_own():
+    """runtime/, or for --pal its copy at the PAL addresses (made once per run)."""
+    global RUNTIME_OWN
+    if PAL and RUNTIME_OWN == ROOT / "runtime":
+        RUNTIME_OWN = pal_port.write_runtime(ROOT / (BUILD % "runtime"))
+    return RUNTIME_OWN
 PYTHON = PRIVATE / "venv/bin/python"
 # runtime/ files with no shared counterpart, built into the runner.
 GAME_SOURCES = ["sc2_hooks.c", "sc2_settings.cpp", "sc2_input.cpp", "sc2_menu.cpp", "sc2_training.cpp", "sc2_guest.cpp", "sc2_netplay.cpp", "sc2_state.cpp", "sc2_frame.cpp", "sc2_wm_select.c", "sc2_android.cpp", "sc2_touch.cpp", "x87_math/sin.c", "x87_math/cos.c", "x87_math/__sin.c", "x87_math/__cos.c", "x87_math/__rem_pio2.c", "x87_math/__rem_pio2_large.c", "x87_math/atan.c", "x87_math/atan2.c", "x87_math/log2.c", "x87_math/log2_data.c", "x87_math/expm1.c", "../recomp-common/launcher/src/online.cpp", "../recomp-common/launcher/src/run_program.cpp", "../recomp-common/menu.cpp", "../recomp-common/settings.cpp"]
@@ -78,7 +97,7 @@ def bound_addresses():
     lookup, so a tail jump into a replaced SDK function cannot run the
     original (docs/bring-up.md)."""
     found = set()
-    for path in sorted((ROOT / "runtime").glob("*.c")):
+    for path in sorted(runtime_own().glob("*.c")):
         text = path.read_text()
         # Hooks wrap the converted function and call it, so it stays converted.
         for body in re.findall(r"RecompFunction recomp_(?!sc2_hooks_)\w*lookup_manual\(uint32_t \w+\)\n\{(.*?)\n\}",
@@ -99,9 +118,9 @@ def manual_list():
 
 def lift():
     if sha256(XBE) != XBE_SHA256:
-        sys.exit("private/disc/Default.xbe is not the supported Soulcalibur II (USA) executable")
-    logs = PRIVATE / "logs"
-    seeds = ROOT / "tools/sc2/seed_functions.json"
+        sys.exit("%s is not the supported Soulcalibur II %s executable" % (XBE, "(Europe, Australia)" if PAL else "(USA)"))
+    logs = PRIVATE / ("logs-pal" if PAL else "logs")
+    seeds = SEEDS
     run([PYTHON, "-u", "-m", "tools.xbe_parser", XBE, "--json", PROGRAM / "analysis.json"],
         logs / "xbe-parser.log", LIFTER)
     run([PYTHON, "-u", "-m", "tools.disasm", XBE, "-o", PROGRAM / "disasm",
@@ -128,12 +147,12 @@ def lift():
 
 def merge():
     """build/src/recomp-runtime: shared files linked, runtime/ files replacing them."""
-    src = ROOT / os.environ.get("SC2_SRC_DIR", "build/src")
+    src = ROOT / os.environ.get("SC2_SRC_DIR", BUILD % "src")
     if src.exists():
         shutil.rmtree(src)
     runtime = src / "recomp-runtime"
     runtime.mkdir(parents=True)
-    own = {p.name: p for p in (ROOT / "runtime").iterdir() if p.is_file()}
+    own = {p.name: p for p in runtime_own().iterdir() if p.is_file()}
     for path in sorted((SHARED / "recomp-runtime").iterdir()):
         if path.is_file():
             os.symlink(own.pop(path.name, path), runtime / path.name)
@@ -142,7 +161,8 @@ def merge():
     # (the x87's math, musl's: the same on every host)
     os.symlink(ROOT / "runtime/x87_math", runtime / "x87_math")
     # (the version, which online play says to the other side: two copies must have the same)
-    (runtime / "sc2_version.h").write_text('#define SC2_VERSION "%s"\n' % (ROOT / "VERSION").read_text().strip())
+    (runtime / "sc2_version.h").write_text('#define SC2_VERSION "%s"\n#define SC2_PAL %d\n' % (
+        (ROOT / "VERSION").read_text().strip(), int(PAL)))
     os.symlink(SHARED / "xbe", src / "xbe")
     os.symlink(ROOT / "recomp-common", src / "recomp-common")
     os.symlink(SHARED / "tools", src / "tools")
@@ -157,8 +177,8 @@ def build():
     if manual_list()[1] != receipt.get("manual_sha256"):
         sys.exit("runtime/ binds a different set of functions than the last lift; lift again")
     runtime = merge()
-    out = ROOT / os.environ.get("SC2_RUNNER_DIR", "build/runner")
-    logs = PRIVATE / "logs"
+    out = ROOT / os.environ.get("SC2_RUNNER_DIR", BUILD % "runner")
+    logs = PRIVATE / ("logs-pal" if PAL else "logs")
     run(["cmake", "-S", runtime, "-B", out, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release", *EXTRA_CMAKE,
          "-DRECOMP_PROGRAM_DIR=%s" % (PROGRAM / "generated"),
          "-DRECOMP_XBE_SHA256=%s" % XBE_SHA256,
@@ -198,6 +218,12 @@ def app():
     (bundle / "Contents/Resources").mkdir()
     shutil.copy2(ROOT / "build/launcher/soulcalibur2-launcher", macos / "soulcalibur2-launcher")
     shutil.copy2(ROOT / "build/runner/recomp_program_runner", macos / "soulcalibur2")
+    # (and the PAL disc's program, when its lift is here: the US program hands a PAL disc to it, runner.cpp)
+    if (PRIVATE / "program-pal").is_dir():
+        subprocess.check_call([sys.executable, str(Path(__file__)), "--pal", "build"])
+        shutil.copy2(ROOT / "build/runner-pal/recomp_program_runner", macos / "soulcalibur2-pal")
+    else:
+        print("(no private/program-pal: the app plays the US disc only)")
     # (the Shader feature's presets, sc2_settings.h ShaderPreset: tools/shaders.sh)
     shaders = subprocess.check_output([str(ROOT / "tools/shaders.sh")], text=True).strip()
     shutil.copytree(shaders, bundle / "Contents/Resources/shaders")

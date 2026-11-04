@@ -5,7 +5,8 @@
    state once those are traced (the damage routine at 0xd8760, the round
    timer).
 
-   - A fighter's record: player 1's at 0x399220, player 2's 0x10e60 after.
+   - A fighter's record: player 1's at 0x399220, player 2's 0x10e60 after
+     (the US record's offsets; the PAL one's, sc2_fighter.h).
      Its health is a float at +0x155c, 240 at full (the maximum at +0x1568);
      the frames of hit stun left at +0x1594; a hit's reaction (staggered,
      launched, knocked down) is going on while the word at +0xf8 is not 0;
@@ -40,6 +41,7 @@
      one, its recovery those after its last; the advantage, the frames
      between the attacker's being free again and the other's. */
 #include "sc2_training.h"
+#include "sc2_fighter.h"
 #include "sc2_panel.h"
 #include "sc2_state.h"
 
@@ -65,13 +67,13 @@ namespace {
 enum : uint32_t {
     kScene = 0x00398700u,
     kFightScene = 7u,
-    kPlayer1 = 0x00399220u,
-    kPlayerStride = 0x00010e60u,
+    kPlayer1 = SC2_FIGHTER_RECORD,
+    kPlayerStride = SC2_FIGHTER_STRIDE,
     kHealth = 0x155cu,
     kHealthMax = 0x1568u,
-    kHitStun = 0x1594u,
+    kHitStun = SC2_FIGHTER_FIELD(0x1594u),
     kReaction = 0x00f8u,
-    kPlace = 0x2920u,
+    kPlace = SC2_FIGHTER_FIELD(0x2920u),
     kControl = 0x0050u,
     kController = 1u,
     kComputer = 3u,
@@ -89,8 +91,8 @@ enum : uint32_t {
     kCameraFocus = 0x001968a0u,
     kProjectionX = 0x00197370u,
     kProjectionY = 0x00197384u,
-    kShapes = 0x1a80u,
-    kShapeCount = 0x1a7cu,
+    kShapes = SC2_FIGHTER_FIELD(0x1a80u),
+    kShapeCount = SC2_FIGHTER_FIELD(0x1a7cu),
     kAttackLive = 0x00c1u,
     kBusy = 0x00a0u,
     kGuardState = 0x024cu,

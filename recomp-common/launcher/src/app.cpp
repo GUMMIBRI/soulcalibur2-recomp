@@ -1322,6 +1322,18 @@ void App::set_toggle(Slot& one, const launcher::Toggle& toggle, bool on) {
 
 // ---- features ----------------------------------------------------------------------------
 
+bool App::feature_shown(const Slot& one, size_t feature) {
+    if (!one.about->feature_shown) {
+        return true;
+    }
+    bool good;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        good = !one.checking && one.file.result == FileCheck::Result::Good;
+    }
+    return one.about->feature_shown(one.features[feature].name, good ? one.file_path : std::string());
+}
+
 void App::load_features(Slot& one) {
     one.features.clear();
     one.features_error.clear();
@@ -3378,7 +3390,7 @@ void App::title_page(size_t which, float width) {
         bool shared = std::any_of(shared_.begin(), shared_.end(), [&](const Shared& s) {
             return std::any_of(s.where.begin(), s.where.end(), [&](const auto& at) { return at.first == which && at.second == i; });
         });
-        if (!shared) {
+        if (!shared && feature_shown(one, i)) {
             rows.push_back({&one.features[i], values[i], "", i});
         }
     }
@@ -3903,6 +3915,9 @@ void App::features_page(float width) {
         std::vector<int> values = recomp::FeatureValues(one.settings, one.features);
         std::vector<FeatureRow> rows;
         for (size_t i = 0; i < one.features.size(); i++) {
+            if (!feature_shown(one, i)) {
+                continue;
+            }
             rows.push_back({&one.features[i], values[i], "", i});
         }
         feature_list(

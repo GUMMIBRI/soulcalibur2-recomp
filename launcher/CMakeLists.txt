@@ -31,6 +31,3 @@ include(../recomp-common/launcher/launcher.cmake)
 include(../guest/guest.cmake)
 target_link_libraries(launcher PRIVATE sc2_guest_lib)
 
-# (the supported Default.xbe, as tools/build_game.py checks it)
-target_compile_definitions(launcher PRIVATE
-    LAUNCHER_XBE_SHA256="7ce12851850ab46766f77c612b251afe7c8bd81f879e11b4836bdf766be542c6")
