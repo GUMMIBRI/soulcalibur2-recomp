@@ -229,8 +229,6 @@ def main(argv):
 
 # --- the PAL build's runtime (tools/build_game.py --pal) ---
 
-US_XBE_SHA256 = "7ce12851850ab46766f77c612b251afe7c8bd81f879e11b4836bdf766be542c6"
-US_RETAIL_XBE_SHA256 = "d7c2e1fc993350821e3f7e13cfd1c9d4ba6a7bf91011005bdd1f843899efb730"
 # The PAL disc's executable as extract-xiso leaves it (the same one-byte media patch, at 0x10baa7), and as the
 # retail disc has it (every section digest good).
 PAL_XBE_SHA256 = "4ad4e124a1773a6f78acf46397073affe9415cde576fe6e242e3260a0e41a1ec"
@@ -271,7 +269,6 @@ def rewrite(text, table, name="?"):
         last = m.end(1) if m.group(1) else m.end(2)
     out.append(text[last:])
     text = "".join(out)
-    text = text.replace(US_RETAIL_XBE_SHA256, PAL_RETAIL_XBE_SHA256)
     return text, missing
 
 

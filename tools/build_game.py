@@ -218,6 +218,12 @@ def app():
     (bundle / "Contents/Resources").mkdir()
     shutil.copy2(ROOT / "build/launcher/soulcalibur2-launcher", macos / "soulcalibur2-launcher")
     shutil.copy2(ROOT / "build/runner/recomp_program_runner", macos / "soulcalibur2")
+    # (and the PAL disc's program, when its lift is here: the US program hands a PAL disc to it, runner.cpp)
+    if (PRIVATE / "program-pal").is_dir():
+        subprocess.check_call([sys.executable, str(Path(__file__)), "--pal", "build"])
+        shutil.copy2(ROOT / "build/runner-pal/recomp_program_runner", macos / "soulcalibur2-pal")
+    else:
+        print("(no private/program-pal: the app plays the US disc only)")
     # (the Shader feature's presets, sc2_settings.h ShaderPreset: tools/shaders.sh)
     shaders = subprocess.check_output([str(ROOT / "tools/shaders.sh")], text=True).strip()
     shutil.copytree(shaders, bundle / "Contents/Resources/shaders")

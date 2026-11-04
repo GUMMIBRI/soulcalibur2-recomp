@@ -43,5 +43,4 @@
 0x001967b0 0x0019aff0
 0x001968a0 0x0019b0e0
 0x0034ed88 0x003608f8   # Arcade endings table: 1 reference, 64/64 bytes alike
-0x0039a77c 0x003ac3bc   # fighter base used by SC2_TEST_KO: 3 references agree
 0x003cb418 0x003dd0a8   # frame count: +8 into the object at 0x3cb410, whose pointer table entry is at PAL 0x225b58 (0x3dd0a0)

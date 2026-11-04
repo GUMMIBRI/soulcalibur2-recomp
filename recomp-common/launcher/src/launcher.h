@@ -165,6 +165,10 @@ struct Description {
     const char *file_key = "file";            // its key in launcher.ini, under [game]
     std::function<FileCheck(const std::string &path)> check;
     bool check_on_thread = false;             // for a check that reads a large file
+    // Optional: whether a feature is offered with the game file chosen (one that only some releases of the game
+    // have, say); false leaves it off the Features page (and a collection's game page). `file` is the chosen file
+    // once its check found it good, else "". Called while drawing: keep it quick (remember what `check` found).
+    std::function<bool(const std::string &feature, const std::string &file)> feature_shown;
     // Optional: a game file near the program (a build inside the source tree), or ""
     std::function<std::string(const std::filesystem::path &program_folder)> find_nearby;
     // Optional, for a collection: where in a folder the player chose this game's file may be (the names a

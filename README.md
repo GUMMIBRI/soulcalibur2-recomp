@@ -13,7 +13,9 @@ Windows and Android.** It is a static recompilation of the Xbox game: its progra
 a native runtime, with no emulator. It adds a training mode, online play with rollback, a free camera with a pause,
 widescreen, higher resolutions and shaders.
 
-**No game files are included.** Your own Soulcalibur II (USA) Xbox disc image is the only one you need to play.
+**No game files are included.** Your own Soulcalibur II Xbox disc image is the only one you need to play: the USA
+disc, or the European one (Europe, Australia), which plays in English, German, French, Spanish or Italian (the
+Language feature; for now on the Mac, and without the guests).
 Link and Heihachi are optional: give the launcher your own GameCube disc, PlayStation 2 disc, or both, to add
 them. This project cannot help you get any of them.
 
@@ -93,7 +95,9 @@ steps a frame; H (or Black) hides the life bars and timer; F12 saves a screensho
 2. On its **Game** page choose your Soulcalibur II (USA) Xbox disc image (`.iso`), or the `Default.xbe` among the
    disc's files. It is checked, and only ever read (on Android it is copied into the app's folder first). The check is of the disc's `Default.xbe` (image hashes differ
    with the dumping tool): SHA-256 `d7c2e1fc993350821e3f7e13cfd1c9d4ba6a7bf91011005bdd1f843899efb730` as on the
-   disc, or `7ce12851850ab46766f77c612b251afe7c8bd81f879e11b4836bdf766be542c6` with extract-xiso's media patch.
+   disc, or `7ce12851850ab46766f77c612b251afe7c8bd81f879e11b4836bdf766be542c6` with extract-xiso's media patch; the
+   European disc's `074463537bf0a2753c72aa6ef1b438851b281954a7ec0cc7919f2464477b5292`, or
+   `4ad4e124a1773a6f78acf46397073affe9415cde576fe6e242e3260a0e41a1ec` patched.
 3. For the guests, choose your GameCube and/or PlayStation 2 disc on the **Guest** page; the launcher builds them
    once (a few minutes).
 4. Press **Play**.
@@ -113,6 +117,8 @@ brew install sdl3 shaderc spirv-cross ninja cmake
 python3 -m venv private/venv && private/venv/bin/pip install capstone==5.0.7
 # put your disc's files in private/disc/ (Default.xbe, root.olk, movie.afs, bgm.afs)
 private/venv/bin/python tools/build_game.py all
+# the European disc too: its files in private/disc-pal/, then
+private/venv/bin/python tools/build_game.py --pal lift
 private/venv/bin/python tools/build_game.py app   # build/Soulcalibur II Recomp.app
 ```
 

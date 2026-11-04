@@ -82,8 +82,8 @@ const std::vector<recomp::FeatureInfo> &Features()
             "place.",
             0, {}},
         {"language", "Game", "Language",
-            "The language of the game's text: menus, profiles and messages. The European disc (Europe, Australia) has "
-            "five; the American disc has English only. Takes effect when the game starts.",
+            "The language of the game's text: menus, profiles and messages. Only the European disc (Europe, Australia) "
+            "has other languages, so this is offered only with it. Takes effect when the game starts.",
             0, {"English", "Deutsch", "Fran\u00e7ais", "Espa\u00f1ol", "Italiano"}},
         {"fps_counter", "Graphics", "FPS counter",
             "The frames shown each second, in the top right corner. The game runs at 60.", 0, {}},

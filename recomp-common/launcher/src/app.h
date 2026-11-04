@@ -122,6 +122,8 @@ private:
         size_t index;      // in the list it came from
     };
 
+    // A game's feature on the pages: the port's feature_shown, given the game's file if it was found good
+    bool feature_shown(const Slot& one, size_t feature);
     Slot& slot() { return *slots_[slot_]; }
     const Slot& slot() const { return *slots_[slot_]; }
     // The collection's games that have a page of their own (their program here, their file chosen and usable), in
