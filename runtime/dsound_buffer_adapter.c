@@ -29,6 +29,7 @@ typedef struct Buffer {
     uint32_t headroom;
     int32_t volume;
     const uint8_t *pcm;
+    bool bad_block_noted;
     RecompDsoundBufferModel model;
     RecompDsoundMixModel mix;
     /* CTRL3D: the 5849 3D block fields DOA2 sets and their voice terms. */
@@ -299,9 +300,19 @@ static void pump(Buffer *buffer, uint64_t now)
             uint32_t block_bytes = 64u * buffer->channels * 2u;
             uint32_t within = offset % block_bytes;
             if (count > block_bytes - within) count = block_bytes - within;
-            if (!xbox_adpcm_decode_block(buffer->pcm + offset / block_bytes * buffer->align,
-                    buffer->align, buffer->channels, decoded, 128u)) {
-                recomp_stop(2, "dsound:buffer-adpcm-invalid");
+            const uint8_t *block = buffer->pcm + offset / block_bytes * buffer->align;
+            if (!xbox_adpcm_decode_block(block, buffer->align, buffer->channels, decoded, 128u)) {
+                /* A block whose header isn't ADPCM (step index over 88, or the reserved byte set), met as a
+                   fight loads (issues #20, #22). The Xbox's audio unit plays on through such a block; this
+                   stopped the game. Now the block is silent, noted once per buffer's data. */
+                if (!buffer->bad_block_noted) {
+                    buffer->bad_block_noted = true;
+                    fprintf(stderr, "recomp dsound: buffer %u data=%08x size=%u: block at %u isn't ADPCM "
+                            "(%02x %02x %02x %02x); played silent\n", (unsigned)(buffer - buffers),
+                            buffer->data, buffer->size, offset / block_bytes * buffer->align,
+                            block[0], block[1], block[2], block[3]);
+                }
+                memset(decoded, 0, sizeof decoded);
             }
             source = (const uint8_t *)decoded + within;
         } else source = buffer->pcm + offset;
@@ -482,6 +493,7 @@ static uint32_t set_data(Buffer *buffer, uint32_t data, uint32_t size)
     buffer->data = size ? data : 0u;
     buffer->size = size;
     buffer->pcm = size ? span(data, size) : NULL;
+    buffer->bad_block_noted = false;
     buffer->model = (RecompDsoundBufferModel){0};
     if (size) recomp_dsound_buffer_configure(&buffer->model, decoded_bytes(buffer, size),
         pitch_hz(buffer), buffer->channels * (buffer->format == 0x69u ? 2u : buffer->bits / 8u), now_ms());
