@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Guest converter consistency**: keep Python floating-point addition in the same order as the C++ builder, including on Python 3.12 and newer.
+
 - **Heihachi hair lighting**: correct PS2 material parsing so white hair no longer receives incorrect colored highlights.
 
 ## 0.2.0-beta.1

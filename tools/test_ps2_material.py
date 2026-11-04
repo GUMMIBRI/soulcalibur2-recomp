@@ -22,3 +22,11 @@ for start in (0, 4, 8, 12):
     except ValueError:
         pass
 print("PASS: Python PS2 material alignment and malformed payload rejection")
+
+# Python 3.12+ uses compensated float summation; archive bounds must still
+# follow the C++ converter's explicit left-to-right arithmetic.
+import vmp2vmx
+assert vmp2vmx._sum_ordered([1e16, 1.0, -1e16]) == 0.0
+assert vmp2vmx._sum_ordered([1, 2, 3]) == 6
+assert struct.pack("<d", vmp2vmx._sum_ordered([-0.0])) == bytes(8)
+print("PASS: version-independent converter summation")

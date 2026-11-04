@@ -23,6 +23,14 @@ import ps2tex
 import textures
 import vmp
 
+def _sum_ordered(values):
+    """Match the C++ converter's left-to-right double additions on every Python version."""
+    total = 0
+    for value in values:
+        total += value
+    return total
+
+
 # (the PS2 curve's fourth value, the Xbox's specular power), from the materials both discs have
 _POWER = [(1.519, 2.0), (1.755, 2.5), (1.986, 3.0), (2.884, 5.0), (3.061, 5.4), (3.092, 5.47), (5.002, 9.806),
           (5.087, 10.0), (5.382, 10.672), (5.526, 11.0), (5.964, 12.0), (6.403, 13.0), (6.904, 14.144),
@@ -52,7 +60,7 @@ def _rotation(axis, turns):
 
 
 def _mul3(a, b):
-    return [[sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
+    return [[_sum_ordered(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
 
 
 def _quaternion(x, y, z, w):
@@ -84,7 +92,7 @@ def _bind(joints):
         else:
             out[i] = (rot, list(t))   # (cycles guard)
             prot, pt = world(parent)
-            out[i] = (_mul3(prot, rot), [pt[k] + sum(prot[k][j] * t[j] for j in range(3)) for k in range(3)])
+            out[i] = (_mul3(prot, rot), [pt[k] + _sum_ordered(prot[k][j] * t[j] for j in range(3)) for k in range(3)])
         return out[i]
 
     return [world(i) for i in range(len(joints))]
@@ -95,8 +103,8 @@ def _skinned_point(vertex, pose):
     for inf in vertex.skin:
         rot, t = pose[inf.bone] if inf.bone < len(pose) else ([[1, 0, 0], [0, 1, 0], [0, 0, 1]], [0, 0, 0])
         for k in range(3):
-            p[k] += sum(rot[k][j] * inf.position[j] for j in range(3)) + t[k] * inf.weight
-            n[k] += sum(rot[k][j] * inf.normal[j] for j in range(3))
+            p[k] += _sum_ordered(rot[k][j] * inf.position[j] for j in range(3)) + t[k] * inf.weight
+            n[k] += _sum_ordered(rot[k][j] * inf.normal[j] for j in range(3))
     return p, n
 
 
@@ -110,7 +118,7 @@ def _facing(strip, pose):
         w = [c[k] - a[k] for k in range(3)]
         face = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]]
         normal = [na[k] + nb[k] + nc[k] for k in range(3)]
-        score += sum(face[k] * normal[k] for k in range(3))
+        score += _sum_ordered(face[k] * normal[k] for k in range(3))
     return 1 if score >= 0 else -1
 
 
@@ -243,7 +251,7 @@ def convert(ps2):
                 meshes.append(dict(group=group, node=node, material=material_of[key], strips=strips,
                                    skinned=record["skinned"]))
     meshes.sort(key=lambda m: m["group"])
-    groups = [sum(1 for m in meshes if m["group"] == g) for g in range(3)]
+    groups = [_sum_ordered(1 for m in meshes if m["group"] == g) for g in range(3)]
     skinned_any = any(m["skinned"] for m in meshes)
 
     out = _Out()
@@ -321,12 +329,12 @@ def convert(ps2):
         keyed[key] = n
     colour_x = stream_x = stream2_x = 0
     if order:
-        counts = [sum(1 for k in order if min(len(k[0]), 4) == n) for n in (1, 2, 3, 4)]
+        counts = [_sum_ordered(1 for k in order if min(len(k[0]), 4) == n) for n in (1, 2, 3, 4)]
         colour_x = out.put(b"".join(struct.pack("<I2f", k[1], *k[2]) for k in order), 0x10)
         stream = bytearray()
         for skin, _, _ in order:
             p, n = _skinned_point(type("V", (), {"skin": skin})(), pose)
-            length = math.sqrt(sum(a * a for a in n)) or 1.0
+            length = math.sqrt(_sum_ordered(a * a for a in n)) or 1.0
             stream += struct.pack("<8f", *p, 1.0, *(a / length for a in n), 1.0)
         stream += bytes(4 * 32)
         stream_x = out.put(bytes(stream), 0x10)
@@ -363,8 +371,8 @@ def convert(ps2):
                 strips.append((_facing(s, pose), ids))
             buffer_x = out.put(bytes(buffer), 0x10)
             points = [struct.unpack_from("<3f", buffer, i * 40) for i in range(len(local))] or [(0.0, 0.0, 0.0)]
-            centre = [sum(c) / len(points) for c in zip(*points)]
-            radius = max(math.sqrt(sum((a - b) * (a - b) for a, b in zip(q, centre))) for q in points)
+            centre = [_sum_ordered(c) / len(points) for c in zip(*points)]
+            radius = max(math.sqrt(_sum_ordered((a - b) * (a - b) for a, b in zip(q, centre))) for q in points)
             bounds_x = out.put(struct.pack("<4f", *centre, radius), 0x10)
             tail = (buffer_x, 0, 0, 0, bounds_x)
         if m["group"] == 2:   # (a triangle list: the game sorts these, hair and the like, by triangle)

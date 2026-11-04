@@ -217,7 +217,7 @@ parts 1 and 3-11, weapon records, both moveset packs. What converts:
   at +0x18 is 4096 for 48 kHz; 32-byte sounds are placeholders. Converted
   audio and the Xbox's own correlate in spectrum (0.8) but not sample by
   sample: the Xbox's are separate encodes of the same recordings.
-- **Strings**: from SLUS_206.43 (Heihachi, Ã¥Â¹Â³Ã¥â€¦Â«, HEIHACHI, Iron Fist,
+- **Strings**: from SLUS_206.43 (Heihachi, ÃƒÂ¥Ã‚Â¹Ã‚Â³ÃƒÂ¥Ã¢â‚¬Â¦Ã‚Â«, HEIHACHI, Iron Fist,
   Japan?, 75), written over Spawn's at start (`--guest-heihachi`).
 
 In game: Heihachi is picked in the guest's place, fights in Practice, and
@@ -420,3 +420,9 @@ other archive entry, model geometry, and texture remained byte-identical.
 Regression commands: `python tools/test_ps2_material.py`; compile
 `tools/test_ps2_material.cpp` against the guest libraries to test the production
 C++ parser as well.
+
+The Python converter uses explicit left-to-right addition for floating-point
+sums, matching the C++ converter. Python 3.12 and newer changed the built-in
+`sum` algorithm; using it could change near-zero bounding-sphere coordinates
+and prevent byte-identical archives even though material decoding agreed.
+The regression includes cancellation and signed-zero cases.
