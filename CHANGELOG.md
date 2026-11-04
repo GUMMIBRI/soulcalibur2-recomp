@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Online on Windows**: hosting closed the game when the other player came, and no match began. The host's game
+  starts over for the match, and on Windows the new copy was given its arguments without quotes, so a path with a
+  space in it (the disc's own name has some) came apart and the copy never started. It now starts with each argument
+  quoted.
+
 ## 0.2.0-beta.1
 
 Soulcalibur II on Android phones and tablets, sharper pictures for 4K screens (up to 8x the Xbox's resolution),
