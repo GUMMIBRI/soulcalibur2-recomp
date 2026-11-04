@@ -69,7 +69,8 @@ RecompFunction recomp_program_lookup(std::uint32_t address);
 #include "sc2_android.h"
 #endif
 #ifdef _WIN32
-#include <process.h>
+#include <windows.h>
+#include <shellapi.h>
 #else
 #include <unistd.h>
 #endif
@@ -737,8 +738,45 @@ static std::vector<std::string> runnerArgs;
     for (std::string &arg : args) argv.push_back(arg.data());
     argv.push_back(nullptr);
 #if defined(_WIN32)
-    _spawnv(_P_NOWAIT, runnerPath.c_str(), argv.data());
-    std::_Exit(0);
+    /* (_spawnv joins the arguments with spaces and no quotes, so a path with a space in it, the disc's
+       "Soulcalibur II (USA).iso" among them, came apart and the new copy never started: each argument quoted as
+       CommandLineToArgvW reads it, the program's output handed on) */
+    (void)argv;
+    const auto wide = [](const std::string &text) {
+        std::wstring out(static_cast<std::size_t>(MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, nullptr, 0)), L'\0');
+        if (!out.empty()) MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, out.data(), static_cast<int>(out.size()));
+        if (!out.empty()) out.pop_back();
+        return out;
+    };
+    std::wstring line;
+    for (const std::string &arg : args) {
+        if (!line.empty()) line += L' ';
+        line += L'"';
+        std::size_t slashes = 0;
+        for (const wchar_t c : wide(arg)) {
+            if (c == L'\\') { ++slashes; continue; }
+            line.append(c == L'"' ? slashes * 2u + 1u : slashes, L'\\');
+            slashes = 0;
+            line += c;
+        }
+        line.append(slashes * 2u, L'\\');
+        line += L'"';
+    }
+    STARTUPINFOW startup{};
+    startup.cb = sizeof startup;
+    startup.dwFlags = STARTF_USESTDHANDLES;
+    startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    startup.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+    startup.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+    PROCESS_INFORMATION process{};
+    if (CreateProcessW(wide(runnerPath).c_str(), line.data(), nullptr, nullptr, TRUE, 0, nullptr, nullptr, &startup,
+            &process)) {
+        CloseHandle(process.hThread);
+        CloseHandle(process.hProcess);
+        std::_Exit(0);
+    }
+    std::fprintf(stderr, "online: the game could not start over (error %lu)\n", GetLastError());
+    std::_Exit(3);
 #elif defined(__ANDROID__)
     /* (no program to run: the activity starts the library again in a new process) */
     if (sc2_android_start_again(std::vector<std::string>(args.begin() + 1, args.end()))) std::_Exit(0);
@@ -922,6 +960,29 @@ int main(int argc, char **argv)
 {
 #ifdef __ANDROID__
     sc2_android_start();
+#endif
+#ifdef _WIN32
+    /* (Windows hands main its arguments in the system's code page; the program reads them as UTF-8, as the
+       launcher writes them, and starts over with them so (startAgain)) */
+    static std::vector<std::string> utf8Args;
+    static std::vector<char *> utf8Argv;
+    {
+        int count = 0;
+        if (LPWSTR *wideArgs = CommandLineToArgvW(GetCommandLineW(), &count)) {
+            for (int i = 0; i < count; ++i) {
+                const int size = WideCharToMultiByte(CP_UTF8, 0, wideArgs[i], -1, nullptr, 0, nullptr, nullptr);
+                std::string arg(size > 0 ? static_cast<std::size_t>(size) : 1u, '\0');
+                if (size > 0) WideCharToMultiByte(CP_UTF8, 0, wideArgs[i], -1, arg.data(), size, nullptr, nullptr);
+                arg.pop_back();
+                utf8Args.push_back(std::move(arg));
+            }
+            LocalFree(wideArgs);
+            for (std::string &arg : utf8Args) utf8Argv.push_back(arg.data());
+            utf8Argv.push_back(nullptr);
+            argc = count;
+            argv = utf8Argv.data();
+        }
+    }
 #endif
     {
         std::error_code ignored;
@@ -1308,8 +1369,19 @@ int main(int argc, char **argv)
             sc2_net_seeded = 1;
         }
     }
-    if (!(storageRoot.empty() ? recomp_save_initialize(recomp_disc_root_path)
-                              : recomp_save_initialize_storage(recomp_storage_root_path))) {
+    const auto saveInitialize = [&] {
+        return storageRoot.empty() ? recomp_save_initialize(recomp_disc_root_path)
+                                   : recomp_save_initialize_storage(recomp_storage_root_path);
+    };
+    bool saveReady = saveInitialize();
+    /* (a copy started over or again for online play: on Windows the copy before it is still ending as this one
+       starts, its hold on the save journal (opened for itself alone) with it, so this one asks again a while) */
+    for (int tries = 0; !saveReady && (netFresh || netAgain) && tries < 100; ++tries) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        saveReady = saveInitialize();
+        if (saveReady) std::fprintf(stderr, "online: the save journal opened after %d ms\n", (tries + 1) * 100);
+    }
+    if (!saveReady) {
         std::cerr << "recomp runner: save recovery failed; guest not started\n";
         return 2;
     }
