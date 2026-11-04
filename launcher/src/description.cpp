@@ -6,6 +6,7 @@
 #include "launcher.h"
 
 #include "guest_page.h"
+#include "textures_page.h"
 
 #include "../../runtime/sc2_settings.h"
 #include "../../runtime/sc2_xbe.h"
@@ -216,7 +217,7 @@ const launcher::Description &launcher::describe() {
     static const Description about = [] {
         Description d;
         d.original = "on the Xbox";
-        d.pages = {{"Guest", GuestPage, GuestDrop, GuestBusy}};
+        d.pages = {{"Guest", GuestPage, GuestDrop, GuestBusy}, {"Textures", TexturesPage, TexturesDrop, TexturesBusy}};
         d.open_on_game_page = true;
         d.file_heading = "GAME FILES";
 #ifdef __ANDROID__
@@ -255,7 +256,7 @@ const launcher::Description &launcher::describe() {
         d.online.room_protocol = 1001;
         d.online.game = "soulcalibur2";
         d.online_page = true;            // (online play on its own page, after Game)
-        d.own_pages_after_game = true;   // (Game, Online, then Guest)
+        d.own_pages_after_game = true;   // (Game, Online, then Guest and Textures)
         d.bindings = sc2::BindingTable();
         d.controls_heading = "WHILE PLAYING";
         d.controls = {{"Keys", "Esc or F1: menu (sound, quit)   F11: full screen. On a gamepad: Back opens and "

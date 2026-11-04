@@ -1209,6 +1209,9 @@ int main(int argc, char **argv)
         if (settings.scale > 1u && std::getenv("RECOMP_D3D_SCALE") == nullptr)
             setenv("RECOMP_D3D_SCALE", std::to_string(settings.scale).c_str(), 1);
         sc2::ApplyBindings(settingsPath);
+        sc2::ApplyTextures(settingsPath, settings.hd_textures, settings.texture_dump);
+    } else {
+        sc2::ApplyTextures({}, false, false);
     }
     sc2::InstallMenu(settingsPath, menuShot);
     sc2::SetShader(shader);

@@ -6,7 +6,8 @@ and that folder.
 
 Nothing of Soulcalibur II is in this repository or its releases' data: the player's own disc is read on their
 machine, and the guests (Link, Heihachi) are converted there from the player's own GameCube and PlayStation 2
-discs.
+discs. The HD texture import (the Textures page) holds only a map of texture names (hashes), and reads the pack
+the player downloaded themselves.
 
 ## In this repository
 
@@ -15,6 +16,7 @@ discs.
 | [recomp-common](https://github.com/tmcleroy/recomp-common) | GPL-3.0 | `recomp-common/`, a synced copy: the launcher, the in-game menu and the settings. Its launcher derives from the launcher of [wiiparty-recomp](https://github.com/arelkair/wiiparty-recomp) by arelkair (GPL-3.0-or-later), as its files say |
 | musl's math (sin, cos, atan2, log2, expm1) | MIT ([docs/licenses/musl.txt](docs/licenses/musl.txt)) | `runtime/x87_math/`, so the game's x87 arithmetic gives the same results on every system |
 | The online service | GPL-3.0-or-later | `online/`, from cps2recomp's `online/` (the same author) |
+| [xxHash](https://github.com/Cyan4973/xxHash) 0.8.2 (Yann Collet) | BSD-2-Clause ([xxHash.txt](docs/licenses/xxHash.txt)) | `third_party/doa2u-re/recomp-runtime/xxhash.h`: texture packs' names (the game) |
 
 ## Submodules
 
