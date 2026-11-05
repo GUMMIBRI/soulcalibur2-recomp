@@ -41,6 +41,9 @@ python tools/ps5_stage.py private/disc private/ps5-stage
    RADV/Vulkan stack. The inspected PE SDL3 receipt explicitly says no GPU;
    the software VideoOut backend alone cannot run this presenter. Resolve shaderc
    runtime compilation or add a reproducible offline shader path.
+   UPDATE: the newer GPU-enabled SDL at gpu-platform-20261030/install-sdl was
+   found and linked with RADV in batch 3 below. The earlier software SDL receipt
+   is not the chosen GPU provider. Offline shader provisioning is implemented.
    Add FSR as a real presentation pass once this works; resolution scaling is
    currently native rendering, not FSR. No FSR implementation is claimed.
 2. Cross-compile the merged shared/game runtime; resolve POSIX, thread/fiber,
@@ -96,6 +99,42 @@ d3d_presenter_inline and the SC2 path adapter. This compiles unmodified shared
 sources, with no generated-game substitute and no shared submodule changes.
 Receipt and command/diagnostic logs are private/ps5-host-objects/receipt.json.
 This does not link SDL GPU, provide shaderc at runtime, or prove console output.
+
+## GPU/shader batch 3 (current)
+
+- runtime/d3d_shader_compiler.cpp is an attributed GPL adaptation of the pinned
+  shared compiler. PS5 reads validated provisioned SPIR-V, captures bounded
+  private requests on misses, and does not dlopen Linux shaderc or write the
+  generic desktop shader cache. Static target shaderc remains an optional path.
+- runtime/sc2_shader_provision.h and tools/ps5_provision_shaders.py implement
+  versioned SC2REQ01/SC2SPV01 serialization, SHA-256 identity, stage/entry checks,
+  size limits and private capture/host compilation. See SHADER-PROVISIONING.md.
+- platform/ps5/gpu/link.cmake links the real existing GPU SDL/RADV providers.
+  tools/file_prefix.cmake attaches it to the actual future runner using a
+  deferred CMake call, without edits to the shared runtime submodule.
+- tools/ps5_link_gpu.py performs a real relocatable archive link and fails
+  if strong SDL/Vulkan API dependencies remain. The latest integrated batch
+  has zero such unresolved APIs and 468 remaining strong host/runtime/SDK
+  dependencies. It is not an executable or a successful final payload link.
+- Nine real host/menu/path/SHA translation units compiled using the selected
+  GPU-enabled SDL headers. The CMake deferred integration configured in an
+  object-only harness; the actual guest runner has not configured/linked.
+- The host provisioner compiled real synthetic HLSL and GLSL and rejected
+  truncated requests/payloads and mismatched stage/entry point.
+- PS5 Graphics menu now saves resolution/aspect/fullscreen choices for next
+  start. HD toggles retain existing live behavior. FSR remains unimplemented.
+
+PE graphics reference requirements are in gpu/PE-GRAPHICS-REFERENCE.md. Keep
+FSR enable/strength/effective state distinct from native internal resolution;
+preserve SC2's native widescreen and do not transplant PS1-specific effects.
+
+Owner authorized downloading a texture pack and installing it on USB when a
+testable build exists. No pack has been downloaded or console files written.
+The forum opened successfully in the visible browser; its page 2 has an SCII
+HD Complete link, but browser site-safety policy blocked MEGA. Do not attempt
+alternate download routes to that blocked host. Manual archive destination:
+private/hd-pack/. Original older Drive link returned 404; PS2 MediaFire returned
+403. PS2 v2 uses BC7 and needs format/name conversion before SC2 can use it.
 
 ## Checks in this batch
 

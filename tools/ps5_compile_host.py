@@ -17,6 +17,8 @@ RUNTIME = ROOT / "third_party/doa2u-re/recomp-runtime"
 SOURCES = (
     "d3d_presenter_sdl_gpu.cpp", "d3d_shader_compiler.cpp",
     "audio_output_sdl.cpp", "input_host_win32.c", "d3d_presenter_inline.cpp",
+    "../xbe/sha.cpp",
+    "sc2_settings.cpp", "sc2_menu.cpp",
 )
 
 
@@ -34,10 +36,12 @@ def main():
             parser.error(f"missing input: {required}")
     out = ROOT / "private/ps5-host-objects"
     out.mkdir(parents=True, exist_ok=True)
+    (out / "sc2_version.h").write_text(
+        '#define SC2_VERSION ' + json.dumps((ROOT / "VERSION").read_text().strip()) + '\n#define SC2_PAL 0\n')
     common = ["--target=x86_64-sie-ps5", "-isysroot", str(sdk),
               "-DSC2_PS5=1", "-fno-stack-protector", "-femulated-tls", "-fPIC",
               "-ffp-contract=off", "-fno-strict-aliasing", "-fwrapv",
-              "-I", str(sdl / "include"), "-I", str(RUNTIME)]
+              "-I", str(sdl / "include"), "-I", str(RUNTIME), "-I", str(out)]
     # Include the actual inline path adapter; no fake runner or guest entrypoint.
     adapter = out / "sc2_ps5_paths.cpp"
     adapter.write_text('#include "sc2_ps5.h"\n'
@@ -45,7 +49,9 @@ def main():
                        'std::string &s, std::string &c, std::string &e) {\n'
                        'return sc2::PS5LaunchPaths(x, d, s, c, e);\n}\n')
     results = []
-    for source in [*(RUNTIME / name for name in SOURCES), adapter]:
+    # Match build_game.py's game-overrides-shared merge semantics.
+    for source in [*(ROOT / "runtime" / name if (ROOT / "runtime" / name).is_file()
+                     else RUNTIME / name for name in SOURCES), adapter]:
         cxx = source.suffix == ".cpp"
         compiler = llvm / (("clang++" if cxx else "clang") + suffix)
         obj = out / (source.stem + ".o")

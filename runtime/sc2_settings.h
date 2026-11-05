@@ -24,6 +24,9 @@ const recomp::BindTable &BindingTable();
 
 /* What settings.ini chooses, as the runner uses it. */
 struct Settings {
+#if defined(SC2_PS5)
+    bool ps5_widescreen = true, ps5_fullscreen = true;
+#endif
     unsigned scale = 1;   /* internal resolution: N times 640x480 */
     int shader = 0;       /* the Shader feature's choice (ShaderPreset) */
     int language = 0;     /* English, Deutsch, Francais, Espanol, Italiano (XboxLanguage) */

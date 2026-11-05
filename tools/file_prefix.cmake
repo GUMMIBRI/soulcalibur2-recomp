@@ -5,6 +5,15 @@
 if(SC2_SOURCE_ROOT)
     add_compile_options("-ffile-prefix-map=${SC2_SOURCE_ROOT}=.")
 endif()
+if(PS5 AND NOT TARGET sc2_ps5_gpu)
+    if(NOT SC2_SOURCE_ROOT)
+        message(FATAL_ERROR "PS5 integration requires SC2_SOURCE_ROOT")
+    endif()
+    include("${SC2_SOURCE_ROOT}/platform/ps5/gpu/link.cmake")
+    # CMAKE_PROJECT_INCLUDE runs before upstream creates the runner. Defer
+    # attachment until that directory finishes, without editing the submodule.
+    cmake_language(DEFER CALL sc2_ps5_link_gpu recomp_program_runner)
+endif()
 # Android: the game is a library there, and a library's calls to its own functions and reads of its own globals (the
 # translated code's registers among them) went through the dynamic linker's tables, which a program's never do: bound
 # directly, as in a program (nothing outside the library replaces them)

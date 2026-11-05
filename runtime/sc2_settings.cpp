@@ -60,6 +60,14 @@ constexpr int kPlayers = 2;
 const std::vector<recomp::FeatureInfo> &Features()
 {
     static const std::vector<recomp::FeatureInfo> features = {
+#if defined(SC2_PS5)
+        {"ps5_widescreen", "Graphics", "Aspect ratio (next start)",
+            "Uses the game's native widescreen mode. Takes effect when the game is started again.",
+            0, {"16:9 widescreen", "Original 4:3"}},
+        {"ps5_fullscreen", "Graphics", "Display mode (next start)",
+            "Fullscreen is recommended on PS5. Takes effect when the game is started again.",
+            0, {"Fullscreen", "Windowed"}},
+#endif
         {"resolution", "Graphics", "Resolution", "Draws the game at a multiple of the Xbox's 640x480. Above 4x needs a fast graphics card: 6x and 8x are "
             "for a 4K screen.",
             recomp::kFeatureEnhanced, {"Original (640x480)", "2x (1280x960)", "3x (1920x1440)", "4x (2560x1920)",
@@ -181,6 +189,10 @@ Settings LoadSettings(const std::string &path)
     const std::vector<int> values = recomp::FeatureValues(ini, features);
     Settings settings;
     for (size_t i = 0; i < features.size(); ++i) {
+#if defined(SC2_PS5)
+        if (features[i].name == "ps5_widescreen") settings.ps5_widescreen = values[i] == 0;
+        if (features[i].name == "ps5_fullscreen") settings.ps5_fullscreen = values[i] == 0;
+#endif
         if (features[i].name == "health_refill") settings.health_refill = values[i] != 0;
         else if (features[i].name == "fps_counter") settings.fps_counter = values[i] != 0;
         else if (features[i].name == "hd_textures") settings.hd_textures = values[i] != 0;

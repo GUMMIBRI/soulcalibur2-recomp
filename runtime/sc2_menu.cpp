@@ -52,11 +52,19 @@ std::string settings_path;
 int shader_choice;
 /* The features the menu offers (those that work while playing): their places in Features() */
 std::vector<size_t> menu_features;
+#if defined(SC2_PS5)
+int next_resolution = 0, next_aspect = 0, next_fullscreen = 0;
+#endif
 
 /* The features the menu changes while playing: training's, and what an online match shows (sc2_online.h). -1: not
    one of them. */
 int FeatureValue(const std::string &name)
 {
+#if defined(SC2_PS5)
+    if (name == "resolution") return next_resolution;
+    if (name == "ps5_widescreen") return next_aspect;
+    if (name == "ps5_fullscreen") return next_fullscreen;
+#endif
     Training &training = TrainingState();
     OnlineShown &online = OnlineDisplay();
     if (name == "health_refill") return training.health_refill;
@@ -82,6 +90,11 @@ int FeatureValue(const std::string &name)
 
 void SetFeatureValue(const std::string &name, int value)
 {
+#if defined(SC2_PS5)
+    if (name == "resolution") { next_resolution = value; return; }
+    if (name == "ps5_widescreen") { next_aspect = value; return; }
+    if (name == "ps5_fullscreen") { next_fullscreen = value; return; }
+#endif
     Training &training = TrainingState();
     OnlineShown &online = OnlineDisplay();
     if (name == "health_refill") training.health_refill = value != 0;
@@ -152,8 +165,15 @@ void Configure()
     for (size_t i = 0; i < features.size(); ++i) {
         if (FeatureValue(features[i].name) < 0) continue;
         menu_features.push_back(i);
+#if defined(SC2_PS5)
+        const bool resolution = features[i].name == "resolution";
+        config.features.push_back({features[i].category, resolution ? "Resolution (next start)" : features[i].title,
+            features[i].description + (resolution ? " Takes effect when the game is started again." : ""),
+            features[i].choices});
+#else
         config.features.push_back({features[i].category, features[i].title, features[i].description,
             features[i].choices});
+#endif
     }
     config.value = [](size_t feature) { return FeatureValue(Features()[menu_features[feature]].name); };
     config.setValue = [](size_t feature, int value) {
@@ -628,6 +648,17 @@ void SetShader(int choice)
 void InstallMenu(const std::string &settingsPath, const std::string &shotSpec)
 {
     settings_path = settingsPath;
+#if defined(SC2_PS5)
+    recomp::Ini ini(settingsPath);
+    ini.load();
+    const auto &features = Features();
+    const auto values = recomp::FeatureValues(ini, features);
+    for (size_t i = 0; i < features.size(); ++i) {
+        if (features[i].name == "resolution") next_resolution = values[i];
+        if (features[i].name == "ps5_widescreen") next_aspect = values[i];
+        if (features[i].name == "ps5_fullscreen") next_fullscreen = values[i];
+    }
+#endif
     const recomp::BindTable &table = BindingTable();
     bindings = settingsPath.empty() ? recomp::DefaultBindings(table) : recomp::LoadBindings(settingsPath, table);
     for (int player = 0; player < table.players; ++player) {

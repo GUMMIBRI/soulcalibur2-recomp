@@ -1224,8 +1224,8 @@ int main(int argc, char **argv)
             std::cerr << "recomp runner: " << error << '\n';
             return 73;
         }
-        setenv("RECOMP_D3D_FULLSCREEN", "1", 0);
-        setenv("RECOMP_D3D_WIDESCREEN", "1", 0);
+        const auto requests = std::filesystem::path(settingsPath).parent_path() / "shader-requests";
+        setenv("SC2_PS5_SHADER_REQUESTS", requests.string().c_str(), 1);
     }
 #endif
     if (xbePath.empty() == discImage.empty()) {
@@ -1243,6 +1243,10 @@ int main(int argc, char **argv)
     int shader = 0;
     if (!settingsPath.empty()) {
         const sc2::Settings settings = sc2::LoadSettings(settingsPath);
+#if defined(SC2_PS5)
+        setenv("RECOMP_D3D_FULLSCREEN", settings.ps5_fullscreen ? "1" : "0", 0);
+        setenv("RECOMP_D3D_WIDESCREEN", settings.ps5_widescreen ? "1" : "0", 0);
+#endif
         shader = settings.shader;
         sc2::TrainingState().health_refill = settings.health_refill;
         sc2::TrainingState().infinite_time = settings.infinite_time;
