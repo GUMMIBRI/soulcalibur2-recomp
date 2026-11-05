@@ -73,6 +73,30 @@ executables can still read USB textures/discs. /data/soulcalibur2 may supply
 read-only content, with persistence on USB or in the installed content folder.
 The executable-folder name is illustrative; no installable PS5 package exists yet.
 
+## Host platform batch 2
+
+Automatic persistence selection now checks actual temporary-file creation,
+close and removal in approved content directories, falling through to another
+USB or installed content folder when a candidate fails. Explicit caller paths
+fail visibly rather than being silently redirected. Relative persistence paths
+are rejected. Read-only USB content folders remain discoverable for assets.
+These probes are startup implementation, not console operations performed here.
+
+tools/ps5_compile_host.py cross-compiles actual runtime units independently of
+the unavailable guest program. Example using the existing local dependencies:
+
+```powershell
+python tools/ps5_compile_host.py --sdk C:/.pe/ps5-native/gpu-platform-20261030/deps/ps5-payload-sdk --llvm C:/.pe/ps5-native/gpu-platform-20261030/deps/llvm/bin --sdl C:/.pe/tools/pe-ps5-sdl3/20261029T010754Z-68fad8/install
+```
+
+All six selected units compiled after enabling C++ exceptions/RTTI (now also
+in the toolchain wrapper) and selecting the same inline SDL presenter as upstream:
+d3d_presenter_sdl_gpu, d3d_shader_compiler, audio_output_sdl, input_host_win32,
+d3d_presenter_inline and the SC2 path adapter. This compiles unmodified shared
+sources, with no generated-game substitute and no shared submodule changes.
+Receipt and command/diagnostic logs are private/ps5-host-objects/receipt.json.
+This does not link SDL GPU, provide shaderc at runtime, or prove console output.
+
 ## Checks in this batch
 
 The PS5 path adapter compiled to an x86_64 PS5 object using the existing public
