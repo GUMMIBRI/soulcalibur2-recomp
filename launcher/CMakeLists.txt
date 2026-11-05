@@ -21,6 +21,7 @@ set(LAUNCHER_DISCLAIMER "Not affiliated with Bandai Namco.")
 # (the Guest page builds Link's data from the player's GameCube disc: guest/, which brings the disc image reader)
 set(LAUNCHER_PORT_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/description.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/guest_page.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/textures_page.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../runtime/sc2_settings.cpp)
 # (the launcher updates itself from the releases: each system's manifest and archive, tools/release/)
 set(LAUNCHER_UPDATE_REPO tmcleroy/soulcalibur2-recomp)
@@ -30,6 +31,3 @@ include(../recomp-common/launcher/launcher.cmake)
 include(../guest/guest.cmake)
 target_link_libraries(launcher PRIVATE sc2_guest_lib)
 
-# (the supported Default.xbe, as tools/build_game.py checks it)
-target_compile_definitions(launcher PRIVATE
-    LAUNCHER_XBE_SHA256="7ce12851850ab46766f77c612b251afe7c8bd81f879e11b4836bdf766be542c6")

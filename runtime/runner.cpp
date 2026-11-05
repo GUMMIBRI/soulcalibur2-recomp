@@ -41,6 +41,7 @@
 #include "sc2_netplay.h"
 #include "sc2_version.h"
 #include "sc2_xbe.h"
+#include "sc2_fighter.h"
 #include "../recomp-common/launcher/src/online.h"
 #include "sc2_online.h"
 #include "input_keyboard_win32.h"
@@ -188,8 +189,8 @@ static std::uint32_t matchHash()
     /* (the fighters' places in a fight only: elsewhere they are what the last fight, the attract demo's say, left,
        which a host waiting in the attract mode has and the other does not; a fight sets them afresh) */
     if (*recomp_memory_u32(0x398700u) == 7u) {
-        mix(recomp_memory(0x399220u + 0x2920u, 12u), 12u);
-        mix(recomp_memory(0x399220u + 0x2920u + 0x10E60u, 12u), 12u);
+        mix(recomp_memory(SC2_FIGHTER_RECORD + SC2_FIGHTER_FIELD(0x2920u), 12u), 12u);
+        mix(recomp_memory(SC2_FIGHTER_RECORD + SC2_FIGHTER_FIELD(0x2920u) + SC2_FIGHTER_STRIDE, 12u), 12u);
     }
     mix(recomp_memory(0x3706F0u, 4u), 4u);
     mix(recomp_memory(0x193C60u, 4u), 4u);
@@ -808,6 +809,35 @@ static std::vector<std::string> argsAgain()
     return args;
 }
 
+/* A disc of the other release (US and PAL, sc2_xbe.h): this program's arguments given to that release's program,
+   beside this one (soulcalibur2 and soulcalibur2-pal, each with this one's extension). */
+[[noreturn]] static void handToOtherRelease()
+{
+#if defined(__ANDROID__)
+    std::fprintf(stderr, "recomp runner: this app plays Soulcalibur II (%s) only\n", SC2_PAL ? "Europe" : "USA");
+    std::_Exit(1);
+#else
+    const std::filesystem::path self = std::filesystem::u8path(runnerPath);
+    std::string stem = self.stem().u8string();
+    if (SC2_PAL) {
+        if (stem.size() > 4 && stem.compare(stem.size() - 4, 4, "-pal") == 0) stem.resize(stem.size() - 4);
+    } else {
+        stem += "-pal";
+    }
+    const std::filesystem::path other = self.parent_path() / std::filesystem::u8path(stem + self.extension().u8string());
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(other, error)) {
+        std::cerr << "recomp runner: this is Soulcalibur II (" << (SC2_PAL ? "USA" : "Europe") << "), whose program ("
+                  << other.u8string() << ") isn't here\n";
+        std::_Exit(1);
+    }
+    std::vector<std::string> args{other.u8string()};
+    args.insert(args.end(), runnerArgs.begin(), runnerArgs.end());
+    runnerPath = other.u8string();
+    startAgain(std::move(args));
+#endif
+}
+
 [[noreturn]] static void restartForMatch()
 {
     std::vector<std::string> args = argsAgain();
@@ -929,7 +959,7 @@ static bool sampleInput(std::uint32_t port, RecompInputGamepad *gamepad)
         static std::uint64_t polls;
         if (++polls % 240u == 0u) {
             const float zero = 0.0f;
-            std::memcpy(recomp_memory(0x39a77cu + 0x10E60u, 4u), &zero, 4u);
+            std::memcpy(recomp_memory(SC2_FIGHTER_RECORD + 0x155cu + SC2_FIGHTER_STRIDE, 4u), &zero, 4u);
         }
     }
     if (port != 0u) {
@@ -944,6 +974,11 @@ static bool sampleInput(std::uint32_t port, RecompInputGamepad *gamepad)
     bool sampled = recomp_input_pulse_source_sample(&inputPulses, gamepad);
     if (!scenePresses.empty()) {
         applyScenePresses(gamepad);
+        sampled = true;
+    }
+    if (sc2::test_start_reads > 0) {
+        --sc2::test_start_reads;
+        gamepad->buttons |= RECOMP_INPUT_BUTTON_START;
         sampled = true;
     }
     static bool startHeld;
@@ -1206,9 +1241,15 @@ int main(int argc, char **argv)
         sc2::TrainingState().one_hit = settings.one_hit;
         sc2::TrainingState().fps_counter = settings.fps_counter;
         sc2::OnlineDisplay() = {settings.online_ping, settings.online_delay, settings.online_hide_names};
+        /* (kernel_config.c: XC_LANGUAGE; the European program's alone, the US disc having English only) */
+        if (SC2_PAL && std::getenv("RECOMP_XBOX_LANGUAGE") == nullptr)
+            setenv("RECOMP_XBOX_LANGUAGE", std::to_string(sc2::XboxLanguage(settings.language)).c_str(), 1);
         if (settings.scale > 1u && std::getenv("RECOMP_D3D_SCALE") == nullptr)
             setenv("RECOMP_D3D_SCALE", std::to_string(settings.scale).c_str(), 1);
         sc2::ApplyBindings(settingsPath);
+        sc2::ApplyTextures(settingsPath, settings.hd_textures, settings.texture_dump);
+    } else {
+        sc2::ApplyTextures({}, false, false);
     }
     sc2::InstallMenu(settingsPath, menuShot);
     sc2::SetShader(shader);
@@ -1234,11 +1275,15 @@ int main(int argc, char **argv)
         std::cerr << "recomp runner: " << parsed.errors.front() << '\n';
         return 1;
     }
+    /* The other release's disc (sc2_xbe.h): its own program, beside this one, is started with the same arguments. */
+    if (parsed.metadata.fileSha256 == SC2_OTHER_XBE_SHA256 || parsed.metadata.fileSha256 == SC2_OTHER_RETAIL_XBE_SHA256)
+        handToOtherRelease();
     /* The port's media-patched copy, or the retail disc's (sc2_xbe.h). */
     const bool retailXbe = parsed.metadata.fileSha256 == SC2_RETAIL_XBE_SHA256;
     if (parsed.metadata.fileSha256 != RECOMP_XBE_SHA256 && !retailXbe) {
         std::cerr << "recomp runner: XBE SHA-256 " << parsed.metadata.fileSha256
-                  << " is neither Soulcalibur II (USA) retail nor the program target\n";
+                  << " is neither Soulcalibur II (" << (SC2_PAL ? "Europe" : "USA")
+                  << ") retail nor the program target\n";
         return 1;
     }
     std::vector<std::uint8_t> memory(RECOMP_XBOX_RAM_SIZE, 0u);
@@ -1383,6 +1428,7 @@ int main(int argc, char **argv)
     }
     if (!saveReady) {
         std::cerr << "recomp runner: save recovery failed; guest not started\n";
+        std::cerr << "recomp stop: save:journal-unreadable (the save folder couldn't be opened) exit_code=2\n";  // (for the launcher)
         return 2;
     }
     const RecompMemoryRegion region = {0u, memory.size(), memory.data()};

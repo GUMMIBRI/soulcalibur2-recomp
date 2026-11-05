@@ -6,6 +6,7 @@
 #include "launcher.h"
 
 #include "guest_page.h"
+#include "textures_page.h"
 
 #include "../../runtime/sc2_settings.h"
 #include "../../runtime/sc2_xbe.h"
@@ -21,6 +22,7 @@
 #include <filesystem>
 #include <string>
 #include <mutex>
+#include <set>
 #include <system_error>
 
 namespace {
@@ -88,9 +90,26 @@ std::string sha256_of_file(const std::string &path) {
     return sum;
 }
 
-// The port's media-patched executable or the retail disc's (runtime/sc2_xbe.h).
-bool is_supported_xbe(const std::string &sum) {
-    return sum == LAUNCHER_XBE_SHA256 || sum == SC2_RETAIL_XBE_SHA256;
+// Which release a Default.xbe is: each one's media-patched executable or its retail disc's (runtime/sc2_xbe.h), the
+// game program playing either (the PAL disc's own program beside it). "" for neither.
+std::string release_of(const std::string &sum) {
+    if (sum == SC2_US_XBE_SHA256 || sum == SC2_US_RETAIL_XBE_SHA256) return "Soulcalibur II (USA)";
+    if (sum == SC2_PAL_XBE_SHA256 || sum == SC2_PAL_RETAIL_XBE_SHA256) return "Soulcalibur II (Europe)";
+    return "";
+}
+
+// The European discs the checks found, by path (the Language feature is theirs alone: feature_shown)
+std::mutex g_european_lock;
+std::set<std::string> g_european;
+
+void remember_release(const std::string &path, const std::string &sum) {
+    std::lock_guard<std::mutex> lock(g_european_lock);
+    if (sum == SC2_PAL_XBE_SHA256 || sum == SC2_PAL_RETAIL_XBE_SHA256) g_european.insert(path);
+    else g_european.erase(path);
+}
+
+bool feature_shown(const std::string &feature, const std::string &file) {
+    return feature != "language" || IsEuropeanDisc(file);
 }
 
 // What a refusal says about the file found, so a report can name it.
@@ -131,16 +150,17 @@ launcher::FileCheck check_image(const std::string &path) {
         complete = complete && recomp_disc_image_lookup(needed, &entry) && !entry.directory;
     }
     recomp_disc_image_close();
+    remember_release(path, sum);
     if (sum.empty()) {
         check.message = "This Xbox disc image has no Default.xbe.";
-    } else if (!is_supported_xbe(sum)) {
-        check.message = "This Xbox disc image isn't Soulcalibur II (USA), the release this port is made from" +
+    } else if (release_of(sum).empty()) {
+        check.message = "This Xbox disc image isn't Soulcalibur II (USA or Europe), the releases this port plays" +
             found(sum) + ".";
     } else if (!complete) {
-        check.message = "Soulcalibur II (USA), but the image is missing some of the disc's files.";
+        check.message = release_of(sum) + ", but the image is missing some of the disc's files.";
     } else {
         check.result = Result::Good;
-        check.message = "Soulcalibur II (USA) disc image, verified.";
+        check.message = release_of(sum) + " disc image, verified.";
     }
     return check;
 }
@@ -164,20 +184,22 @@ launcher::FileCheck check_game(const std::string &path) {
         return check;
     }
     const std::string sum = sha256_of_file(path);
-    if (!is_supported_xbe(sum)) {
-        check.message = "This Default.xbe isn't Soulcalibur II (USA) for the Xbox, the release this port is made from" +
-            found(sum) + ".";
+    remember_release(path, sum);
+    const std::string release = release_of(sum);
+    if (release.empty()) {
+        check.message = "This Default.xbe isn't Soulcalibur II (USA or Europe) for the Xbox, the releases this port "
+            "plays" + found(sum) + ".";
         return check;
     }
     for (const char *needed : {"root.olk", "movie.afs", "bgm.afs"}) {
         if (!std::filesystem::is_regular_file(file.parent_path() / needed, error)) {
-            check.message = std::string("Soulcalibur II (USA), but ") + needed +
+            check.message = release + ", but " + needed +
                 " isn't beside it. Keep the disc's files together in one folder.";
             return check;
         }
     }
     check.result = Result::Good;
-    check.message = "Soulcalibur II (USA), verified.";
+    check.message = release + ", verified.";
     return check;
 }
 
@@ -196,7 +218,7 @@ std::vector<std::string> arguments(const launcher::Launch &launch) {
     if (launch.on("fullscreen")) args.push_back("--fullscreen");
     if (launch.on("widescreen")) args.push_back("--widescreen");
     if (launch.on("free_camera")) args.push_back("--free-camera");
-    for (const std::string &arg : GuestArguments(launch.folder)) args.push_back(arg);
+    for (const std::string &arg : GuestArguments(launch.folder, launch.file)) args.push_back(arg);
     return args;
 }
 
@@ -216,14 +238,14 @@ const launcher::Description &launcher::describe() {
     static const Description about = [] {
         Description d;
         d.original = "on the Xbox";
-        d.pages = {{"Guest", GuestPage, GuestDrop, GuestBusy}};
+        d.pages = {{"Guest", GuestPage, GuestDrop, GuestBusy}, {"Textures", TexturesPage, TexturesDrop, TexturesBusy}};
         d.open_on_game_page = true;
         d.file_heading = "GAME FILES";
 #ifdef __ANDROID__
         d.file_intro = "Choose your own copy of the game: an image of your Soulcalibur II (USA) Xbox disc (.iso). "
                        "It is copied into the app's folder, where the game reads it.";
 #else
-        d.file_intro = "Choose your own copy of the game: an image of your Soulcalibur II (USA) Xbox disc (.iso), "
+        d.file_intro = "Choose your own copy of the game: an image of your Soulcalibur II Xbox disc (.iso), USA or Europe, "
                        "or the Default.xbe among the disc's files. It stays where it is: the launcher and the game "
                        "only read it.";
 #endif
@@ -233,6 +255,7 @@ const launcher::Description &launcher::describe() {
         d.file_key = "disc";
         d.check = check_game;
         d.check_on_thread = true;
+        d.feature_shown = feature_shown;
         d.arguments = arguments;
         d.display = {
             {"fullscreen", "Full screen", "F11 switches while playing.", console_session(), nullptr},
@@ -255,7 +278,7 @@ const launcher::Description &launcher::describe() {
         d.online.room_protocol = 1001;
         d.online.game = "soulcalibur2";
         d.online_page = true;            // (online play on its own page, after Game)
-        d.own_pages_after_game = true;   // (Game, Online, then Guest)
+        d.own_pages_after_game = true;   // (Game, Online, then Guest and Textures)
         d.bindings = sc2::BindingTable();
         d.controls_heading = "WHILE PLAYING";
         d.controls = {{"Keys", "Esc or F1: menu (sound, quit)   F11: full screen. On a gamepad: Back opens and "
@@ -264,4 +287,9 @@ const launcher::Description &launcher::describe() {
         return d;
     }();
     return about;
+}
+
+bool IsEuropeanDisc(const std::string &game_file) {
+    std::lock_guard<std::mutex> lock(g_european_lock);
+    return g_european.count(game_file) != 0;
 }

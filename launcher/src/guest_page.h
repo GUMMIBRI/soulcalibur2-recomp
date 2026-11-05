@@ -12,7 +12,9 @@
 void GuestPage(launcher::PageContext &page);
 void GuestDrop(launcher::PageContext &page, const char *path);
 bool GuestBusy();
-// What Play adds while Link or Heihachi is chosen and built
-std::vector<std::string> GuestArguments(const std::filesystem::path &folder);
+// What Play adds while Link or Heihachi is chosen and built (with the US disc: `game_file`)
+std::vector<std::string> GuestArguments(const std::filesystem::path &folder, const std::string &game_file);
+// Whether the game file the checks found is the European disc's (description.cpp)
+bool IsEuropeanDisc(const std::string &game_file);
 // Held by whatever uses the disc image reader (runtime disc_image.c: one image at a time)
 extern std::mutex g_disc_image_lock;

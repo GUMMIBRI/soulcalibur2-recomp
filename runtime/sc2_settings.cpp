@@ -72,6 +72,19 @@ const std::vector<recomp::FeatureInfo> &Features()
             "The in-game menu is drawn over it without the shader.",
             0, {"Off", "CRT", "CRT Lottes", "CRT Royale", "CRT Guest", "CRT Light", "Scanlines: light",
                 "Scanlines: strong", "Scanlines: OSSC", "xBRZ", "ScaleFX", "Your own"}},
+        {"hd_textures", "Graphics", "HD textures",
+            "The textures in the textures folder beside the game's settings drawn in place of the game's own: an HD "
+            "pack imported on the launcher's Textures page, or your own (named as Dump textures names them).",
+            recomp::kFeatureEnhanced, {}},
+        {"texture_dump", "Graphics", "Dump textures",
+            "Each texture the game draws written once to textures-dump beside the game's settings, named by its "
+            "pixels, for making a pack: an image of the same name (a DDS, any size) in the textures folder takes its "
+            "place.",
+            0, {}},
+        {"language", "Game", "Language",
+            "The language of the game's text: menus, profiles and messages. Only the European disc (Europe, Australia) "
+            "has other languages, so this is offered only with it. Takes effect when the game starts.",
+            0, {"English", "Deutsch", "Fran\u00e7ais", "Espa\u00f1ol", "Italiano"}},
         {"fps_counter", "Graphics", "FPS counter",
             "The frames shown each second, in the top right corner. The game runs at 60.", 0, {}},
         {"health_refill", "Training", "Health refill",
@@ -169,6 +182,8 @@ Settings LoadSettings(const std::string &path)
     for (size_t i = 0; i < features.size(); ++i) {
         if (features[i].name == "health_refill") settings.health_refill = values[i] != 0;
         else if (features[i].name == "fps_counter") settings.fps_counter = values[i] != 0;
+        else if (features[i].name == "hd_textures") settings.hd_textures = values[i] != 0;
+        else if (features[i].name == "texture_dump") settings.texture_dump = values[i] != 0;
         else if (features[i].name == "infinite_time") settings.infinite_time = values[i] != 0;
         else if (features[i].name == "input_display") settings.input_display = values[i] != 0;
         else if (features[i].name == "combo_readout") settings.combo_readout = values[i] != 0;
@@ -177,6 +192,7 @@ Settings LoadSettings(const std::string &path)
         else if (features[i].name == "no_damage_p1") settings.no_damage[0] = values[i] != 0;
         else if (features[i].name == "no_damage_p2") settings.no_damage[1] = values[i] != 0;
         else if (features[i].name == "shader") settings.shader = values[i];
+        else if (features[i].name == "language" && values[i] >= 0 && values[i] < 5) settings.language = values[i];
         else if (features[i].name == "one_hit") settings.one_hit = values[i] != 0;
         else if (features[i].name == "online_ping") settings.online_ping = values[i] != 0;
         else if (features[i].name == "online_delay") settings.online_delay = values[i] != 0;

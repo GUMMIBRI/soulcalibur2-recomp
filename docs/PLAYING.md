@@ -13,6 +13,7 @@ The launcher is where the game is set up and started. Its pages:
   the version and updates.
 - **Online**: host, join with a code, your name, the waiting room and the lobby's open matches.
 - **Guest**: your GameCube and/or PlayStation 2 disc, and the button that builds the guests from them.
+- **Textures**: an HD texture pack (below), imported from the folder you unzipped it to.
 - **Features**: the switches, in presets (*Original* plays exactly as the Xbox did; *Enhanced* turns on the
   improvements) or one by one.
 - **Controllers**: both players' keys and gamepad buttons.
@@ -121,6 +122,26 @@ screenshots and the runtime's text are without the shader. A preset that cannot 
 
 ![CRT: Talim and Xianghua on a curved monitor](screenshots/shader-crt.jpg)
 
+## HD textures
+
+The game draws textures from a `textures` folder beside your settings (below) in place of its own, while **HD
+textures** is on (the Features page, Graphics, or the in-game menu: it switches while playing).
+
+- **The GameCube's HD pack**: *Soulcalibur 2 Complete HD Textures*, an AI upscale (ESRGAN, 4x) made for Dolphin and
+  the GameCube disc (GRSEAF), shared on the
+  [Dolphin forums](https://forums.dolphin-emu.org/Thread-soul-calibur-2-hd-texture-pack). Download and unzip it,
+  then on the launcher's **Textures** page choose its folder and press **Import**: each of its images is matched to
+  the Xbox texture with the same picture (a map of names built into the launcher; the Xbox's are the same pictures
+  as the GameCube's), about 4,300 of the game's textures, characters, stages and menus. The pack is only read; what
+  the import makes goes in `textures/GRSEAF`. Link is in it too (his textures as the Guest page builds them). What
+  the GameCube disc does not have keeps its own textures: Spawn and the Xbox's own screens, and Heihachi (from the
+  PlayStation 2). Not on Android yet: import on a computer and copy the `textures` folder into the app's folder.
+- **Your own**: turn on **Dump textures** and play: each texture the game draws is written once to `textures-dump`,
+  named by its pixels (16 hex digits, `.dds`). An image of the same name in `textures` (a DDS: DXT1, DXT3, DXT5 or
+  32-bit BGRA, any size, with mip levels or without) takes its place.
+
+![A paused fight at 4x, part of the picture at full size: the game's textures (left) and the GameCube HD pack's (right)](screenshots/hd-textures.jpg)
+
 ## Endless battle
 
 On the menu's Modes page: in any fight (Practice, VS Battle, Arcade...), the game plays both fighters for as long as
@@ -199,7 +220,7 @@ More in [online.md](online.md).
 
 ## Where things are kept
 
-Settings (`settings.ini`, `launcher.ini`), saves and the guests' file are in your user folder:
+Settings (`settings.ini`, `launcher.ini`), saves, the guests' file and the textures are in your user folder:
 
 - macOS: `~/Library/Application Support/Soulcalibur II`
 - Linux: `~/.local/share/Soulcalibur II`

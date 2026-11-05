@@ -16,6 +16,8 @@
 #   LAUNCHER_UPDATE_REPO  owner/name                optional: the launcher updates its own folder from this
 #   LAUNCHER_VERSION      0.5.0                     GitHub repository's releases (src/update.h); the version
 #                                                   alone (no updates: an Android app) is shown and matched online
+#   LAUNCHER_ISSUES_REPO  owner/name                optional: where a player reports a game that stopped (GitHub
+#                                                   issues); LAUNCHER_UPDATE_REPO when not set
 #
 # It makes the target `launcher` (the program <LAUNCHER_GAME_EXE>-launcher), to which the port may add its
 # own definitions, include folders and libraries. SDL3 is the system's or is built in; Dear ImGui and the
@@ -104,6 +106,12 @@ if(WIN32)
 endif()
 if(LAUNCHER_VERSION)
     target_compile_definitions(launcher PRIVATE LAUNCHER_VERSION="${LAUNCHER_VERSION}")
+endif()
+if(NOT LAUNCHER_ISSUES_REPO AND LAUNCHER_UPDATE_REPO)
+    set(LAUNCHER_ISSUES_REPO ${LAUNCHER_UPDATE_REPO})
+endif()
+if(LAUNCHER_ISSUES_REPO)
+    target_compile_definitions(launcher PRIVATE LAUNCHER_ISSUES_REPO="${LAUNCHER_ISSUES_REPO}")
 endif()
 if(LAUNCHER_UPDATE_REPO)
     target_sources(launcher PRIVATE ${RECOMP_LAUNCHER_DIR}/src/update.cpp)
