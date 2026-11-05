@@ -23,6 +23,8 @@ namespace {
 struct StreamOutput { char **buffer; std::size_t *size; };
 std::mutex stream_mutex;
 std::map<FILE *, StreamOutput> streams;
+constexpr std::size_t kMaxPublishedStream = 16u * 1024u * 1024u;
+constexpr std::size_t kMaxOpenStreams = 32;
 
 int publish(FILE *file, const StreamOutput &output)
 {
@@ -33,6 +35,7 @@ int publish(FILE *file, const StreamOutput &output)
         return -1;
     }
     const auto size = static_cast<std::size_t>(position);
+    if (size > kMaxPublishedStream) { errno = EFBIG; return -1; }
     char *buffer = static_cast<char *>(std::malloc(size + 1));
     if (!buffer) return -1;
     if (fseeko(file, 0, SEEK_SET) != 0) { std::free(buffer); return -1; }
@@ -66,6 +69,11 @@ extern "C" bool u_memstream_open(u_memstream *mem, char **buffer, std::size_t *s
     if (!file) { const int failure = errno; close(fd); errno = failure; return false; }
     try {
         std::lock_guard<std::mutex> lock(stream_mutex);
+        if (streams.size() >= kMaxOpenStreams) {
+            __real_fclose(file);
+            errno = EMFILE;
+            return false;
+        }
         streams.emplace(file, StreamOutput{buffer, size});
     } catch (...) { __real_fclose(file); errno = ENOMEM; return false; }
     *buffer = nullptr;

@@ -12,6 +12,10 @@ include(guest.cmake)
 add_executable(sc2_guest tool.cpp)
 target_link_libraries(sc2_guest PRIVATE sc2_guest_lib)
 
+# Pack-only host conversion does not need any retail executable/disc input.
+add_executable(sc2_import_hd ../tools/import_hd_textures.cpp)
+target_link_libraries(sc2_import_hd PRIVATE sc2_guest_lib)
+
 include(CTest)
 if(BUILD_TESTING)
     add_executable(sc2_ps2_material_test ../tools/test_ps2_material.cpp)

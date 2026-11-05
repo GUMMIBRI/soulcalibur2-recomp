@@ -1,5 +1,20 @@
 # PS5 homebrew port
 
+CURRENT kernel checkpoint: real scheduler/fiber/file compatibility is now
+integrated. Strict shared-host module linkage succeeds, with all 333 strong
+dynamic imports covered by actual SDK providers. The runner source compiles,
+but no original Xbox guest program has been supplied/linked and there is no
+game payload or console run. See KERNEL-INTEGRATION.md. Prior failing strict
+link checkpoints below are historical.
+
+CURRENT HD pack: the owner manually supplied scii-hd_complete_v1.1.zip. It is
+preserved privately with its manifest/credits/hash. The actual upstream converter
+produced 4321 Xbox-named DDS replacements (45 partial composites, 284 map entries
+missing from the pack, zero conversion failures). Staging path:
+private/hd-pack/converted/soulcalibur2/textures/GRSEAF. No USB installation or
+console writes yet. Missing pack images retain original game textures. This
+supersedes earlier statements that the pack had not arrived/been converted.
+
 LATEST: renderer support and SDK link closure have advanced beyond the early
 checkpoints below. Thirty renderer/menu/overlay units plus five real CPU/audio/
 timing/touch/memory-stream support units compiled. Strict shared linkage with

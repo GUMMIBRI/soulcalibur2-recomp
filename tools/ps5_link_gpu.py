@@ -24,6 +24,13 @@ PLATFORM_OBJECTS = (
     "audio_output_sdl", "input_host_win32", "sha", "sc2_ps5_paths",
     "imgui", "imgui_draw", "imgui_tables", "imgui_widgets", "imgui_impl_sdlgpu3",
 )
+KERNEL_OBJECTS = (
+    "runtime", "stop_report", "guest_heap", "xapi_clock", "native_fiber", "fiber_switch_x86_64",
+    "fiber_model", "fiber_adapter", "kernel_config", "kernel_crypto", "kernel_debug", "kernel_device",
+    "kernel_dispatch", "kernel_file", "disc_image", "kernel_interrupt", "kernel_memory", "kernel_ordinals",
+    "kernel_rtl", "kernel_startup", "kernel_thread", "kernel_video", "device_model", "apu_model",
+    "ohci_model", "directory_model", "symbolic_link_model", "save_transaction", "win32_compat",
+)
 
 
 def digest(path):
@@ -52,6 +59,7 @@ def main():
     parser.add_argument("--object", type=Path, action="append", dest="objects")
     parser.add_argument("--extra-object", type=Path, action="append", default=[],
                         help="add a real support object to the standard renderer set")
+    parser.add_argument("--kernel", action="store_true", help="include actual compiled recomp_kernel objects")
     args = parser.parse_args()
     suffix = ".exe" if sys.platform == "win32" else ""
     linker = args.llvm / ("ld.lld" + suffix)
@@ -70,6 +78,9 @@ def main():
         "libSceSystemService.so", "libSceSysmodule.so")]
     units = args.objects or [ROOT / f"private/ps5-host-objects/{name}.o" for name in PLATFORM_OBJECTS]
     units = [*units, *args.extra_object]
+    if args.kernel:
+        units += [ROOT / f"private/ps5-host-objects/{name}.o" for name in KERNEL_OBJECTS]
+    units = list(dict.fromkeys(path.resolve() for path in units))
     for path in [linker, nm, sdl, radv, *units, *archives, *imports]:
         if not path.is_file():
             parser.error(f"missing link input: {path}")
@@ -141,7 +152,7 @@ def main():
         print(f"{'Shared host module' if args.strict_shared else 'Relocatable GPU link'}: {linked}; "
               f"{len(unresolved)} strong undefined symbols, {len(imported)} provided by SDK imports, "
               f"{len(remaining)} without an SDK import provider.")
-        print("No payload linked or executed. See receipt.json and unresolved.txt.")
+        print("No game payload linked or executed. See " + receipt_name + " and " + unresolved_name + ".")
     # A successful -r invocation is insufficient if the actual GPU boundary
     # still has missing strong APIs. Keep SDK/game-runtime unresolved symbols
     # visible in the receipt without pretending this is a final payload link.
