@@ -7,6 +7,8 @@
   new Textures page and matched to the Xbox's textures (about 4,300 of them: characters, Link included, stages,
   menus), drawn while **HD textures** is on (it also switches in the in-game menu, while playing). **Dump textures**
   writes each texture the game draws to a folder, for making your own pack.
+- **Guest converter consistency**: keep Python floating-point addition in the same order as the C++ builder, including on Python 3.12 and newer.
+- **Heihachi hair lighting**: correct PS2 material parsing so white hair no longer receives incorrect colored highlights.
 
 ## 0.2.2-beta.1
 
