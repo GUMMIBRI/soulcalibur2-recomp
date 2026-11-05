@@ -46,6 +46,7 @@
 #include "sc2_online.h"
 #include "input_keyboard_win32.h"
 #include "sc2_state.h"
+#include "sc2_ps5.h"
 
 extern "C" {
 uint32_t recomp_d3d8_swap_counter(void);
@@ -1021,8 +1022,10 @@ int main(int argc, char **argv)
 #endif
     {
         std::error_code ignored;
-        runnerPath = std::filesystem::absolute(std::filesystem::u8path(argv[0]), ignored).u8string();
-        runnerArgs.assign(argv + 1, argv + argc);
+        if (argc > 0 && argv && argv[0]) {
+            runnerPath = std::filesystem::absolute(std::filesystem::u8path(argv[0]), ignored).u8string();
+            runnerArgs.assign(argv + 1, argv + argc);
+        }
     }
     recomp_install_host_diagnostics();
     recomp_d3d_frame_breakdown = recomp_kernel_thread_times;
@@ -1214,6 +1217,17 @@ int main(int argc, char **argv)
         else if (argument == "--expect-stop") expectStop = value;
         else milestoneLog = value;
     }
+#if defined(SC2_PS5)
+    {
+        std::string error;
+        if (!sc2::PS5LaunchPaths(xbePath, discImage, storageRoot, settingsPath, error)) {
+            std::cerr << "recomp runner: " << error << '\n';
+            return 73;
+        }
+        setenv("RECOMP_D3D_FULLSCREEN", "1", 0);
+        setenv("RECOMP_D3D_WIDESCREEN", "1", 0);
+    }
+#endif
     if (xbePath.empty() == discImage.empty()) {
         std::cerr << "recomp runner: give --disc or --xbe\n";
         return 64;

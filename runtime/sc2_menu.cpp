@@ -9,6 +9,7 @@
 #include "sc2_touch.h"
 
 #include "sc2_settings.h"
+#include "sc2_ps5.h"
 #include "sc2_online.h"
 #include "sc2_state.h"
 #include "sc2_version.h"
@@ -594,8 +595,19 @@ void ApplyTextures(const std::string &settings_path, bool hd, bool dump)
         return;
     }
     const std::filesystem::path folder = std::filesystem::u8path(settings_path).parent_path();
+#if defined(SC2_PS5)
+    const std::string textures = PS5TextureRoot();
+    const std::string dumps = (folder / "textures-dump").u8string();
+    // The shared runtime gives these variables priority over its arguments.
+    // Keep them subject to the console's read-only /data policy too.
+    setenv("RECOMP_TEXTURES", hd ? textures.c_str() : "", 1);
+    setenv("RECOMP_TEXTURE_DUMP", dump && PS5WritablePath(dumps) ? dumps.c_str() : "", 1);
+    recomp_d3d_textures_configure(hd && !textures.empty() ? textures.c_str() : "",
+        dump && PS5WritablePath(dumps) ? dumps.c_str() : "");
+#else
     recomp_d3d_textures_configure(hd ? (folder / "textures").u8string().c_str() : nullptr,
         dump ? (folder / "textures-dump").u8string().c_str() : nullptr);
+#endif
 }
 
 bool TexturesHd() { return textures_hd; }

@@ -11,8 +11,9 @@ namespace sc2 {
 
 namespace {
 
-enum : unsigned { kScaleChoices = 7 };
-constexpr unsigned kScales[kScaleChoices] = {1u, 2u, 3u, 4u, 5u, 6u, 8u};
+enum : unsigned { kScaleChoices = 8 };
+// Keep 8x at index 6 so existing settings retain their resolution.
+constexpr unsigned kScales[kScaleChoices] = {1u, 2u, 3u, 4u, 5u, 6u, 8u, 7u};
 
 /* The controls (the stick clicks left out); sc2_input.cpp gives each to the
    runtime by its name. */
@@ -62,7 +63,7 @@ const std::vector<recomp::FeatureInfo> &Features()
         {"resolution", "Graphics", "Resolution", "Draws the game at a multiple of the Xbox's 640x480. Above 4x needs a fast graphics card: 6x and 8x are "
             "for a 4K screen.",
             recomp::kFeatureEnhanced, {"Original (640x480)", "2x (1280x960)", "3x (1920x1440)", "4x (2560x1920)",
-                "5x (3200x2400)", "6x (3840x2880)", "8x (5120x3840)"}},
+                "5x (3200x2400)", "6x (3840x2880)", "8x (5120x3840)", "7x (4480x3360)"}},
         {"shader", "Graphics", "Shader",
             "The picture drawn through one of RetroArch's shaders, at the Xbox's 480 lines whatever the resolution. "
             "CRT: a curved monitor. CRT Lottes and CRT Guest: flat monitors, sharp and bright. CRT Royale: the closest "
