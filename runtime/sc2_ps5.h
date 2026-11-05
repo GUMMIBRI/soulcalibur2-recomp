@@ -32,9 +32,28 @@ inline bool PS5WritablePath(const std::filesystem::path &path)
         value.compare(0, 19, "/mnt/data/homebrew/") == 0);
 }
 
+inline bool PS5PathWithin(const std::filesystem::path &path, const std::filesystem::path &directory)
+{
+    if (!path.is_absolute() || !directory.is_absolute()) return false;
+    std::error_code ec;
+    const auto root = std::filesystem::weakly_canonical(directory, ec);
+    if (ec) return false;
+    const auto resolved = std::filesystem::weakly_canonical(path, ec);
+    if (ec) return false;
+    const auto relative = resolved.lexically_relative(root);
+    return !relative.empty() && *relative.begin() != "..";
+}
+
+inline bool PS5AssetPath(const std::filesystem::path &path)
+{
+    const auto value = path.lexically_normal().generic_string();
+    return path.is_absolute() && (PS5USBPath(path) || value == "/data" || value.compare(0, 6, "/data/") == 0);
+}
+
 inline std::vector<std::filesystem::path> PS5ContentRoots()
 {
     std::vector<std::filesystem::path> roots;
+    const char *overrideRoot = std::getenv("SC2_PS5_ROOT");
     std::error_code ec;
     for (std::filesystem::directory_iterator it("/mnt", ec), end; !ec && it != end; it.increment(ec)) {
         const auto mount = it->path();
@@ -50,16 +69,18 @@ inline std::vector<std::filesystem::path> PS5ContentRoots()
         }
     }
     std::sort(roots.begin(), roots.end());
-    const char *installed = std::getenv("SC2_PS5_ROOT");
-    roots.emplace_back(installed && *installed ? installed : "/mnt/data/homebrew/soulcalibur2");
     roots.emplace_back("/data/soulcalibur2");
+    if (overrideRoot && *overrideRoot && PS5AssetPath(overrideRoot)) {
+        const std::filesystem::path selected(overrideRoot);
+        roots.erase(std::remove(roots.begin(), roots.end(), selected), roots.end());
+        roots.insert(roots.begin(), selected);
+    }
     return roots;
 }
 
 /* A mount can look writable in stat while refusing writes. Check a fresh
    temporary file, never an existing save or settings file. Only approved
-   persistence roots reach this code. Failure lets automatic selection try
-   the next USB or installed content folder. */
+   persistence roots reach this code. */
 inline bool PS5PrepareDirectory(const std::filesystem::path &directory, std::string &error)
 {
     if (!PS5WritablePath(directory)) {
@@ -101,13 +122,35 @@ inline std::string PS5TextureRoot()
     return {};
 }
 
-/* Payload loaders need not supply argv or a useful current directory. Keep
-   disc data read-only and saves outside it. CLI arguments still take priority. */
+/* Do not turn a relative argv[0] or a loader's CWD into an invented install
+   location. Loaders without an absolute executable path must provide their
+   real eboot directory explicitly through SC2_PS5_EBOOT_DIR. */
 inline bool PS5LaunchPaths(std::string &xbe, std::string &disc,
-    std::string &storage, std::string &settings, std::string &error)
+    std::string &storage, std::string &settings, std::string &error, const std::string &executablePath)
 {
+    const char *overrideRoot = std::getenv("SC2_PS5_ROOT");
+    if (overrideRoot && *overrideRoot && !PS5AssetPath(overrideRoot)) {
+        error = "SC2_PS5_ROOT must be an absolute asset path under /data or /mnt/usbN";
+        return false;
+    }
+    const char *overrideEboot = std::getenv("SC2_PS5_EBOOT_DIR");
+    std::filesystem::path eboot;
+    if (overrideEboot && *overrideEboot) eboot = overrideEboot;
+    else {
+        const std::filesystem::path executable(executablePath);
+        if (executable.is_absolute() && executable.has_filename()) eboot = executable.parent_path();
+    }
+    if (eboot.empty() || !eboot.is_absolute()) {
+        error = "cannot locate the eboot folder; loader must supply an absolute executable path or SC2_PS5_EBOOT_DIR";
+        return false;
+    }
+    std::error_code ec;
+    eboot = std::filesystem::canonical(eboot, ec);
+    if (ec || !std::filesystem::is_directory(eboot, ec) || !PS5WritablePath(eboot)) {
+        error = "eboot folder must exist on USB or under /mnt/data/homebrew; /data assets are read-only";
+        return false;
+    }
     const auto roots = PS5ContentRoots();
-    std::filesystem::path writable;
     for (const auto &root : roots) {
         if (xbe.empty() && disc.empty()) {
             std::error_code ec;
@@ -115,31 +158,20 @@ inline bool PS5LaunchPaths(std::string &xbe, std::string &disc,
                 xbe = (root / "disc" / "Default.xbe").string();
         }
     }
-    // Never silently redirect a path explicitly chosen by the caller.
-    if (!storage.empty() && !PS5PrepareDirectory(storage, error)) return false;
-    if (!settings.empty() && !PS5PrepareDirectory(std::filesystem::path(settings).parent_path(), error))
+    if (storage.empty()) storage = (eboot / "storage").string();
+    if (settings.empty()) settings = (eboot / "settings.ini").string();
+    // Explicit paths are respected only inside the actual eboot folder. A
+    // symlink cannot redirect persistence into the asset tree or another app.
+    if (!PS5PathWithin(storage, eboot) || !PS5PathWithin(settings, eboot) ||
+        std::filesystem::path(settings) == eboot || !PS5WritablePath(storage) || !PS5WritablePath(settings)) {
+        error = "saves and settings must remain in the eboot folder; asset roots are read-only";
         return false;
-    if (storage.empty() || settings.empty()) {
-        std::string failures;
-        for (const auto &root : roots) {
-            if (!PS5WritablePath(root)) continue;
-            std::string failure;
-            if (PS5PrepareDirectory(root, failure) &&
-                (!storage.empty() || PS5PrepareDirectory(root / "storage", failure))) {
-                writable = root;
-                break;
-            }
-            failures += failure + "\n";
-        }
-        if (writable.empty()) {
-            error = "no writable content folder; /data is read-only\n" + failures;
-            return false;
-        }
     }
-    if (storage.empty()) storage = (writable / "storage").string();
-    if (settings.empty()) settings = (writable / "settings.ini").string();
-    if (!PS5WritablePath(storage) || !PS5WritablePath(settings)) {
-        error = "saves/settings must be on USB or in /mnt/data/homebrew; /data is read-only";
+    if (!PS5PrepareDirectory(storage, error) ||
+        !PS5PrepareDirectory(std::filesystem::path(settings).parent_path(), error)) return false;
+    // C file-attribute compatibility uses this same validated install identity.
+    if (setenv("SC2_PS5_EBOOT_DIR", eboot.string().c_str(), 1) != 0) {
+        error = "cannot retain the validated eboot directory";
         return false;
     }
     return true;

@@ -139,8 +139,8 @@ def main():
     adapter = out / "sc2_ps5_paths.cpp"
     adapter.write_text('#include "sc2_ps5.h"\n'
                        'bool sc2_ps5_paths_compile(std::string &x, std::string &d, '
-                       'std::string &s, std::string &c, std::string &e) {\n'
-                       'return sc2::PS5LaunchPaths(x, d, s, c, e);\n}\n')
+                       'std::string &s, std::string &c, std::string &e, const std::string &p) {\n'
+                       'return sc2::PS5LaunchPaths(x, d, s, c, e, p);\n}\n')
     results = []
     # Match build_game.py's game-overrides-shared merge semantics.
     imgui_sources = [imgui / name for name in ("imgui.cpp", "imgui_draw.cpp", "imgui_tables.cpp",

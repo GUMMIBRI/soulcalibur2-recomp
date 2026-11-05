@@ -1223,7 +1223,9 @@ int main(int argc, char **argv)
 #if defined(SC2_PS5)
     {
         std::string error;
-        if (!sc2::PS5LaunchPaths(xbePath, discImage, storageRoot, settingsPath, error)) {
+        const std::string executable = argc > 0 && argv && argv[0] &&
+            std::filesystem::path(argv[0]).is_absolute() ? argv[0] : "";
+        if (!sc2::PS5LaunchPaths(xbePath, discImage, storageRoot, settingsPath, error, executable)) {
             std::cerr << "recomp runner: " << error << '\n';
             return 73;
         }

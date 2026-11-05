@@ -14,9 +14,10 @@ typedef struct Sc2PS5Attrs {
 
 static int sc2_ps5_storage_path(const char *path, char root[PATH_MAX])
 {
-    char resolved[PATH_MAX];
+    char resolved[PATH_MAX], eboot[PATH_MAX];
+    const char *installed = getenv("SC2_PS5_EBOOT_DIR");
     if (!recomp_storage_root_path || !realpath(recomp_storage_root_path, root) ||
-        !realpath(path, resolved)) return -1;
+        !realpath(path, resolved) || !installed || !realpath(installed, eboot)) return -1;
     const char *p = root;
     int allowed = strncmp(p, "/mnt/data/homebrew/", 19) == 0;
     if (strncmp(p, "/mnt/usb", 8) == 0) {
@@ -26,6 +27,9 @@ static int sc2_ps5_storage_path(const char *path, char root[PATH_MAX])
         allowed |= p != first && (*p == '/' || *p == '\0');
     }
     const size_t n = strlen(root);
+    const size_t eboot_size = strlen(eboot);
+    if (strncmp(root, eboot, eboot_size) != 0 ||
+        (root[eboot_size] != '/' && root[eboot_size] != '\0')) { errno = EROFS; return -1; }
     if (!allowed || strncmp(root, resolved, n) != 0 ||
         (resolved[n] != '/' && resolved[n] != '\0')) { errno = EROFS; return -1; }
     return 0;

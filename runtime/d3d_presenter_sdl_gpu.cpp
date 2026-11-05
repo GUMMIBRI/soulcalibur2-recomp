@@ -17,6 +17,7 @@
 #include "d3d_draw_shader.h"
 #include "d3d_shader_chain.h"
 #include "d3d_shader_compiler.h"
+#include "sc2_presenter_shaders.h"
 #include "d3d_shader_preset.h"
 #include "d3d_texture_model.h"
 #include "d3d_texture_replace.h"
@@ -2758,18 +2759,6 @@ const char *frameDumpPath(RecompD3dPresenter *presenter, uint32_t present_count,
     }
     return path;
 }
-
-const char kGammaShader[] =
-    "[[vk::binding(0, 2)]] Texture2D pixels : register(t0);\n"
-    "[[vk::binding(0, 2)]] SamplerState pixel_sampler : register(s0);\n"
-    "[[vk::binding(0, RECOMP_UNIFORM_SET)]] cbuffer Gamma : register(b0) { float4 ramp[256]; };\n"
-    "float4 vs_main(uint id : SV_VertexID) : SV_Position {\n"
-    " float2 p = float2((id << 1) & 2, id & 2);\n"
-    " return float4(p * float2(2,-2) + float2(-1,1), 0, 1); }\n"
-    "float4 ps_main(float4 p : SV_Position) : SV_Target {\n"
-    " float4 c = pixels.Load(int3(p.xy, 0));\n"
-    " uint3 i = (uint3)(saturate(c.rgb) * 255 + 0.5);\n"
-    " return float4(ramp[i.r].r, ramp[i.g].g, ramp[i.b].b, c.a); }\n";
 
 /* SMAA 1x (iryoku/smaa, ultra preset) on the final resolved image, from the
    same HLSL as the Direct3D 11 presenter. Textures 0-4 are color, edges,

@@ -1,5 +1,15 @@
 # PS5 homebrew port
 
+CURRENT path/package/shader checkpoint: owner now requires saves within the
+actual eboot folder; assets remain /data/soulcalibur2 or USB/soulcalibur2.
+Implemented absolute-executable/explicit-loader metadata resolution with no
+asset-folder persistence fallback. See PATHS.md. A real-input-only private
+two-folder packager is implemented (PACKAGING.md); it rejects the entry-zero
+host module. USB upload is authorized but has not occurred without a game build.
+Thirty fixed gamma/boot-FVF shaders were genuinely exported/provisioned and
+staged beside the three FSR shaders; dynamic material coverage still fails
+closed. See PRESENTER-PROVISIONING.md.
+
 LATEST runner/FSR checkpoint: real runner adapters and game-side native sources
 compile for PS5. Strict full-runner linking now reports only 33 generated guest
 symbols (recomp_lookup and original sub_* routines), no host/SDK/FSR imports.
