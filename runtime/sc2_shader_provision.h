@@ -9,6 +9,10 @@
 
 namespace sc2 {
 constexpr std::size_t kShaderLimit = 4u * 1024u * 1024u;
+constexpr std::uintmax_t kNativeShaderCacheBytes = 256u * 1024u * 1024u;
+constexpr std::size_t kNativeShaderCacheEntries = 1024;
+constexpr unsigned kNativeShaderCacheWrites = 256;
+inline std::filesystem::path ShaderNativeCacheDirectory();
 
 inline void ShaderWord(std::vector<uint8_t> &bytes, uint32_t value)
 {
@@ -53,6 +57,9 @@ inline bool ShaderSpirvValid(const std::vector<uint8_t> &code, const std::string
 
 inline bool ShaderProvisionAvailable()
 {
+    const auto native = ShaderNativeCacheDirectory();
+    std::error_code nativeError;
+    if (!native.empty() && std::filesystem::is_directory(native, nativeError)) return true;
     for (const auto &root : PS5ContentRoots()) {
         std::error_code ec;
         if (std::filesystem::is_directory(root / "shader-cache", ec)) return true;
@@ -119,15 +126,47 @@ inline void ShaderCaptureRequest(const std::string &key, const std::vector<uint8
     else unlink(name.data());
 }
 
-inline bool ShaderProvision(const std::string &source, const char *entry, bool vertex,
-    const std::vector<std::string> &defines, bool glsl, std::vector<uint8_t> &code, std::string &error,
-    bool captureMiss = true, bool *requestValid = nullptr)
+// Resolve only the eboot identity retained by PS5LaunchPaths. No CWD,
+// HOME, asset-root or arbitrary writable-path fallback is permitted.
+inline std::filesystem::path ShaderNativeCacheDirectory()
 {
-    if (requestValid) *requestValid = false;
+    const char *retained = std::getenv("SC2_PS5_EBOOT_DIR");
+    if (!retained || !*retained) return {};
+    const std::filesystem::path supplied(retained);
+    if (!supplied.is_absolute()) return {};
+    std::error_code ec;
+    const auto eboot = std::filesystem::canonical(supplied, ec);
+    if (ec || !PS5WritablePath(eboot) || !std::filesystem::is_directory(eboot, ec)) return {};
+    const auto cache = eboot / "shader-cache";
+    if (!PS5PathWithin(cache, eboot) || !PS5WritablePath(cache)) return {};
+    return cache;
+}
+
+inline bool ShaderReadPayload(const std::filesystem::path &path, const std::string &key,
+    const std::string &entry, bool vertex, std::vector<uint8_t> &code)
+{
     code.clear();
+    std::ifstream file(path, std::ios::binary);
+    if (!file) return false;
+    std::string magic, identity, cachedEntry;
+    if (!ShaderHeaderLine(file, magic, 8) || !ShaderHeaderLine(file, identity, 64) ||
+        !ShaderHeaderLine(file, cachedEntry, 256) || magic != "SC2SPV01" || identity != key || cachedEntry != entry) return false;
+    const auto start = file.tellg(); file.seekg(0, std::ios::end);
+    const auto end = file.tellg();
+    if (start < 0 || end < start || end - start > static_cast<std::streamoff>(kShaderLimit)) return false;
+    code.resize(static_cast<std::size_t>(end - start)); file.seekg(start);
+    file.read(reinterpret_cast<char *>(code.data()), static_cast<std::streamsize>(code.size()));
+    if (file && ShaderSpirvValid(code, entry, vertex)) return true;
+    code.clear();
+    return false;
+}
+
+inline bool ShaderMakeRequest(const std::string &source, const char *entry, bool vertex,
+    const std::vector<std::string> &defines, bool glsl, std::vector<uint8_t> &request, std::string &error)
+{
     if (!entry || !*entry || std::strlen(entry) > 256 || source.size() > 2u * 1024u * 1024u ||
         defines.size() > 128) { error = "shader request exceeds provisioning limits"; return false; }
-    std::vector<uint8_t> request = {'S','C','2','R','E','Q','0','1'};
+    request = {'S','C','2','R','E','Q','0','1'};
     ShaderWord(request, vertex ? 0u : 4u); ShaderWord(request, glsl ? 1u : 0u);
     ShaderText(request, entry);
     ShaderWord(request, static_cast<uint32_t>(defines.size()));
@@ -138,21 +177,93 @@ inline bool ShaderProvision(const std::string &source, const char *entry, bool v
     // Profile version includes Vulkan1.0, uniform-set/sample defaults, HLSL
     // offsets and location mapping. Change magic/version when policy changes.
     ShaderText(request, source);
+    return true;
+}
+
+// Optional derived-data persistence. All failures (including allocation or
+// filesystem exceptions) leave an already compiled native shader successful.
+inline void ShaderCacheStore(const std::string &source, const char *entry, bool vertex,
+    const std::vector<std::string> &defines, bool glsl, const std::vector<uint8_t> &code) noexcept
+{
+    try {
+        static std::mutex mutex;
+        static unsigned written = 0;
+        static bool full = false;
+        std::lock_guard<std::mutex> lock(mutex);
+        if (full || written >= kNativeShaderCacheWrites || !entry || !ShaderSpirvValid(code, entry, vertex)) return;
+        std::vector<uint8_t> request; std::string error;
+        if (!ShaderMakeRequest(source, entry, vertex, defines, glsl, request, error)) return;
+        const auto folder = ShaderNativeCacheDirectory();
+        if (folder.empty()) return;
+        std::error_code ec;
+        std::filesystem::create_directories(folder, ec);
+        // Re-resolve after directory creation; a preexisting link cannot move
+        // writes outside the eboot, even to another approved USB location.
+        if (ec || ShaderNativeCacheDirectory() != folder) return;
+        const std::string key = doaxbv::sha256Hex(request);
+        const auto destination = folder / (key + ".spv");
+        if (!PS5PathWithin(destination, folder)) return;
+        std::vector<uint8_t> existing;
+        if (ShaderReadPayload(destination, key, entry, vertex, existing)) return;
+        const std::string header = "SC2SPV01\n" + key + "\n" + entry + "\n";
+        const std::uintmax_t payloadBytes = header.size() + code.size();
+        std::uintmax_t bytes = 0;
+        std::size_t count = 0;
+        for (std::filesystem::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec)) {
+            if (++count > kNativeShaderCacheEntries) { full = true; return; }
+            const auto status = it->symlink_status(ec);
+            if (ec || !std::filesystem::is_regular_file(status)) return;
+            const auto size = it->file_size(ec);
+            if (ec || size > kNativeShaderCacheBytes || bytes > kNativeShaderCacheBytes - size) { full = true; return; }
+            bytes += size;
+        }
+        if (ec) return;
+        // Include the temporary file in the caps, even when repairing an
+        // invalid existing destination. Never rely on later rename to fit.
+        if (count >= kNativeShaderCacheEntries ||
+            bytes > kNativeShaderCacheBytes - payloadBytes) { full = true; return; }
+        const std::string destinationName = destination.string();
+        std::string pattern = (folder / ("." + key + ".XXXXXX")).string();
+        std::vector<char> name(pattern.begin(), pattern.end()); name.push_back('\0');
+        const int fd = mkstemp(name.data());
+        if (fd < 0) return;
+        const auto writeAll = [fd](const uint8_t *data, std::size_t size) {
+            while (size) {
+                const ssize_t done = write(fd, data, size);
+                if (done < 0 && errno == EINTR) continue;
+                if (done <= 0) return false;
+                data += done; size -= static_cast<std::size_t>(done);
+            }
+            return true;
+        };
+        bool complete = writeAll(reinterpret_cast<const uint8_t *>(header.data()), header.size()) &&
+            writeAll(code.data(), code.size());
+        if (complete && fsync(fd) != 0) complete = false;
+        if (close(fd) != 0) complete = false;
+        if (complete && std::rename(name.data(), destinationName.c_str()) == 0) ++written;
+        else unlink(name.data());
+    } catch (...) {
+        // The cache is an optimization, not a prerequisite for native compile.
+    }
+}
+
+inline bool ShaderProvision(const std::string &source, const char *entry, bool vertex,
+    const std::vector<std::string> &defines, bool glsl, std::vector<uint8_t> &code, std::string &error,
+    bool captureMiss = true, bool *requestValid = nullptr)
+{
+    if (requestValid) *requestValid = false;
+    code.clear();
+    std::vector<uint8_t> request;
+    if (!ShaderMakeRequest(source, entry, vertex, defines, glsl, request, error)) return false;
     const std::string key = doaxbv::sha256Hex(request);
     if (requestValid) *requestValid = true;
-    for (const auto &root : PS5ContentRoots()) {
-        std::ifstream file(root / "shader-cache" / (key + ".spv"), std::ios::binary);
-        if (!file) continue;
-        std::string magic, identity, cachedEntry;
-        if (!ShaderHeaderLine(file, magic, 8) || !ShaderHeaderLine(file, identity, 64) ||
-            !ShaderHeaderLine(file, cachedEntry, 256) || magic != "SC2SPV01" || identity != key || cachedEntry != entry) continue;
-        const auto start = file.tellg(); file.seekg(0, std::ios::end);
-        const auto end = file.tellg();
-        if (start < 0 || end < start || end - start > static_cast<std::streamoff>(kShaderLimit)) continue;
-        code.resize(static_cast<std::size_t>(end - start)); file.seekg(start);
-        file.read(reinterpret_cast<char *>(code.data()), static_cast<std::streamsize>(code.size()));
-        if (file && ShaderSpirvValid(code, entry, vertex)) return true;
-        code.clear();
+    // Author-supplied asset cache remains read-only and wins over derived data.
+    for (const auto &root : PS5ContentRoots())
+        if (ShaderReadPayload(root / "shader-cache" / (key + ".spv"), key, entry, vertex, code)) return true;
+    const auto native = ShaderNativeCacheDirectory();
+    if (!native.empty()) {
+        const auto path = native / (key + ".spv");
+        if (PS5PathWithin(path, native) && ShaderReadPayload(path, key, entry, vertex, code)) return true;
     }
     if (captureMiss) ShaderCaptureRequest(key, request);
     error = "missing or invalid provisioned SPIR-V " + key +

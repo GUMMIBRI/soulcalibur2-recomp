@@ -13,6 +13,7 @@ from pathlib import Path
 import subprocess
 import sys
 import shutil
+import re
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME = ROOT / "third_party/doa2u-re/recomp-runtime"
@@ -49,6 +50,132 @@ ADAPTER_SOURCES = (
     "free_camera_adapter.c", "scene_freeze.c", "scene_freeze_adapter.c", "host_diagnostics.cpp",
     "runner_load.cpp", "../xbe/xbe_parser.cpp",
 )
+
+
+_digest_cache = {}
+
+
+def digest(path):
+    # Dependency graphs share hundreds of SDK headers. Hash unchanged files
+    # once per process; metadata changes invalidate reuse, including replacements.
+    path = Path(path).resolve()
+    def identity():
+        item = path.stat()
+        return (item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns, item.st_ctime_ns)
+    before = identity()
+    cached = _digest_cache.get(path)
+    if cached and cached[0] == before:
+        return cached[1]
+    value = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            value.update(block)
+    if identity() != before:
+        raise ValueError(f"build input changed while hashing: {path}")
+    result = value.hexdigest()
+    _digest_cache[path] = (before, result)
+    return result
+
+
+def dependency_origin(path):
+    """Resolve merged include names back to the authoritative source tree."""
+    path = Path(path).resolve()
+    base = ROOT / "private/ps5-host-source"
+    if path.is_relative_to(base / "recomp-runtime"):
+        relative = path.relative_to(base / "recomp-runtime")
+        own = ROOT / "runtime" / relative
+        return own if own.is_file() else RUNTIME / relative
+    for name, origin in (("xbe", RUNTIME.parent / "xbe"), ("recomp-common", ROOT / "recomp-common")):
+        if path.is_relative_to(base / name):
+            return origin / path.relative_to(base / name)
+    return path
+
+
+def dependency_records(depfile):
+    # Clang emits Make syntax, including escaped Windows drive colons/spaces.
+    text = depfile.read_text(encoding="utf-8").replace("\\\n", " ")
+    separator = re.search(r":\s", text)
+    if not separator:
+        raise ValueError("clang dependency file has no target separator")
+    names = re.findall(r"(?:\\.|[^\s])+", text[separator.end():])
+    paths = sorted({Path(re.sub(r"\\([ #:\\])", r"\1", name)).resolve() for name in names})
+    if not paths:
+        raise ValueError("clang dependency file has no inputs")
+    result = []
+    for path in paths:
+        origin = dependency_origin(path)
+        sha = digest(path)
+        if digest(origin) != sha:
+            raise ValueError(f"merged dependency differs from authoritative input: {origin}")
+        result.append(dict(path=str(path), origin=str(origin), sha256=sha))
+    return result
+
+
+def validate_object(row, sdk=None, command=None):
+    """Reject legacy, modified or stale real compile outputs; no compilation."""
+    if row.get("schema") != "sc2.ps5-object.v2" or row.get("exit_code") != 0:
+        raise ValueError("object needs a dependency-tracked compile receipt")
+    if sdk and Path(row["sdk"]).resolve() != Path(sdk).resolve():
+        raise ValueError("object was compiled against a different SDK")
+    if command is not None and row["command"] != command:
+        raise ValueError("object compiler options changed")
+    if row["command_sha256"] != hashlib.sha256(json.dumps(row["command"]).encode()).hexdigest():
+        raise ValueError("object command receipt changed")
+    if digest(row["compiler"]) != row["compiler_sha256"]:
+        raise ValueError("object compiler changed")
+    if digest(row["source"]) != row["sha256"] or digest(row["object"]) != row["object_sha256"]:
+        raise ValueError("object/source bytes changed")
+    if not row.get("dependencies"):
+        raise ValueError("object receipt has no compiler dependency graph")
+    for item in row["dependencies"]:
+        origin = dependency_origin(item["path"])
+        if origin.resolve() != Path(item["origin"]).resolve():
+            raise ValueError(f"dependency override selection changed: {item['path']}")
+        if digest(item["path"]) != item["sha256"] or digest(origin) != item["sha256"]:
+            raise ValueError(f"object dependency changed: {origin}")
+    return row
+
+
+def compile_record(source, obj, command, sdk, log):
+    """Compile once, hash actual compiler-discovered dependencies and publish atomically."""
+    source = Path(source).resolve()
+    depfile = obj.with_suffix(".d")
+    pending = obj.with_suffix(".o.pending")
+    record_path = obj.with_suffix(".object.json")
+    obj.unlink(missing_ok=True)
+    pending.unlink(missing_ok=True)
+    record_path.unlink(missing_ok=True)
+    depfile.unlink(missing_ok=True)
+    before = digest(source)
+    compiler = Path(command[0]).resolve()
+    compiler_hash = digest(compiler)
+    actual = [*command, "-MD", "-MF", str(depfile)]
+    # Record both the deterministic requested command and actual dependency invocation.
+    actual[actual.index("-o") + 1] = str(pending)
+    done = subprocess.run(actual, capture_output=True, text=True, errors="replace")
+    diagnostic = done.stdout + done.stderr
+    row = dict(schema="sc2.ps5-object.v2", source=str(source), sha256=before,
+               command=command, command_sha256=hashlib.sha256(json.dumps(command).encode()).hexdigest(),
+               compiler=str(compiler), compiler_sha256=compiler_hash, sdk=str(Path(sdk).resolve()),
+               exit_code=done.returncode, log=str(log), object=None, object_sha256=None,
+               dependency_command=actual, dependencies=[])
+    if done.returncode == 0 and pending.is_file():
+        try:
+            row["dependencies"] = dependency_records(depfile)
+            if digest(source) != before or digest(compiler) != compiler_hash:
+                raise ValueError("source/compiler changed during compilation")
+            pending.replace(obj)
+            row.update(object=str(obj), object_sha256=digest(obj))
+        except (OSError, ValueError) as error:
+            diagnostic += "\n" + str(error)
+            row["exit_code"] = 1
+    elif done.returncode == 0:
+        row["exit_code"] = 1
+        diagnostic += "\ncompiler returned success without an object"
+    pending.unlink(missing_ok=True)
+    log.write_text(diagnostic, encoding="utf-8")
+    record_path.write_text(json.dumps(row, indent=2) + "\n", encoding="utf-8")
+    return row
 
 
 def merged_sources():
@@ -108,6 +235,9 @@ def main():
                         help="upstream pinned ImGui source directory (v1.91.9)")
     parser.add_argument("--compiler-rt", type=Path, help="licensed compiler-rt cpu_model source directory")
     parser.add_argument("--shaderc-include", type=Path, help="built target shaderc public include directory")
+    parser.add_argument("--incremental", action="store_true", help="reuse only dependency-validated unchanged objects")
+    parser.add_argument("--opt-level", choices=("0", "1", "2", "3", "s"), default="2",
+                        help="production optimization level; changing it invalidates incremental objects")
     parser.add_argument("--only", action="append", help="compile only these source basenames (repeatable)")
     parser.add_argument("--group", choices=("host", "kernel", "runner", "adapters", "game"), default="host",
                         help="actual upstream target source group; no guest substitutes")
@@ -130,6 +260,7 @@ def main():
     (out / "sc2_version.h").write_text(
         '#define SC2_VERSION ' + json.dumps((ROOT / "VERSION").read_text().strip()) + '\n#define SC2_PAL 0\n')
     common = ["--target=x86_64-sie-ps5", "-isysroot", str(sdk),
+              "-O" + args.opt_level,
               "-DSC2_PS5=1", "-fno-stack-protector", "-femulated-tls", "-fPIC",
               "-ffp-contract=off", "-fno-strict-aliasing", "-fwrapv",
               "-I", str(sdl / "include"), "-I", str(merged), "-I", str(out), "-I", str(imgui),
@@ -169,22 +300,26 @@ def main():
         cxx = source.suffix == ".cpp"
         compiler = llvm / (("clang++" if cxx else "clang") + suffix)
         obj = out / (source.stem + ".o")
-        # Remove only this exact stale object, so a failed invocation cannot
-        # accidentally appear successful from an earlier output.
-        obj.unlink(missing_ok=True)
         includes = (["-isystem", str(sdk / "target/include/c++/v1")] if cxx else [])
         command = [str(compiler), *common, *includes, "-isystem", str(sdk / "target/include"),
                    *(["-std=c++17", "-fexceptions", "-frtti"] if cxx else
                      [] if source.suffix in (".S", ".s") else ["-std=c11"]),
                    "-I", str(ROOT / "runtime"),
                    "-c", str(source), "-o", str(obj)]
-        done = subprocess.run(command, capture_output=True, text=True, errors="replace")
         log = out / (source.stem + ".log")
-        log.write_text(done.stdout + done.stderr, encoding="utf-8")
-        results.append(dict(source=str(source), sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
-                            command=command, exit_code=done.returncode, log=str(log),
-                            object=str(obj) if done.returncode == 0 and obj.is_file() else None))
-        print(f"{'compiled' if done.returncode == 0 else 'FAILED'}: {source.name}", flush=True)
+        row = None
+        if args.incremental and obj.with_suffix(".object.json").is_file():
+            try:
+                previous = json.loads(obj.with_suffix(".object.json").read_text(encoding="utf-8"))
+                row = validate_object(previous, sdk, command)
+            except (ValueError, OSError, KeyError, TypeError):
+                pass
+        if row is None:
+            row = compile_record(source, obj, command, sdk, log)
+            print(f"{'compiled' if row['object'] else 'FAILED'}: {source.name}", flush=True)
+        else:
+            print(f"unchanged: {source.name}", flush=True)
+        results.append(row)
     receipt = ("receipt-selected.json" if args.only else
                f"receipt-{args.group}.json" if args.group != "host" else "receipt.json")
     report = dict(

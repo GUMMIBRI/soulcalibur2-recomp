@@ -1,5 +1,14 @@
 # PS5 homebrew port
 
+LATEST service batch:120 distinct real objects compiled atO2 with dependency
+receipts. Touchpad menu alias and bounded controller-init retry implemented;
+native shaders persist in bounded eboot-side cache (no asset/data writes).
+Strict host link succeeds with340 SDK-backed imports and no missing providers.
+Final optimized fullrunner link has only33 generated guest dependencies.
+Package staging takes only four required Xbox files, hardlinks assets by default
+and validates shader payloads. No valid guest program, package or console run.
+See INPUT-SERVICES.md, NATIVE-SHADER-CACHE.md, BUILD-INTEGRITY.md and PACKAGING.md.
+
 LATEST native shader milestone: real shaderc v2025.5 static compiler built
 (268 units), bounded cache-first dynamic compilation integrated, strict host
 link succeeds with340 SDK-backed imports and no missing providers. Full runner

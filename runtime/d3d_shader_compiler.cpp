@@ -219,6 +219,7 @@ bool compileSpirv(const std::string &hlsl, const char *entry_point, bool vertex,
         error = "native shaderc returned invalid SPIR-V for the requested stage/entry";
         return false;
     }
+    if (compiled) sc2::ShaderCacheStore(hlsl, entry_point, vertex, defines, glsl, spirv);
     if (!compiled) {
         // Capture exact source for host diagnosis without replacing the native
         // compiler's diagnostic or ever substituting a generic material.

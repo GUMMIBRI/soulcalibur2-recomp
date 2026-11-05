@@ -14,6 +14,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+from ps5_compile_host import validate_object
+
 ROOT = Path(__file__).resolve().parents[1]
 PLATFORM_OBJECTS = (
     "d3d_presenter_sdl_gpu", "d3d_presenter_inline", "d3d_shader_compiler",
@@ -55,6 +57,8 @@ def main():
     parser.add_argument("--guest-receipt", type=Path, help="authenticated ps5_compile_guest.py object receipt")
     parser.add_argument("--xbe", type=Path, help="supported owned executable, read in place for guest receipt validation")
     parser.add_argument("--shaderc-library", type=Path, help="real target libshaderc_combined.a")
+    parser.add_argument("--shaderc-receipt", type=Path, default=ROOT / "private/ps5-shaderc/receipt.json",
+                        help="successful target shaderc build receipt matching the exact archive")
     parser.add_argument("--platform-library", type=Path,
                         help="optional real public platform support archive; never a generated stub")
     parser.add_argument("--payload", action="store_true", help="link real SDK CRT executable; requires authenticated guest objects")
@@ -116,9 +120,10 @@ def main():
                 raise ValueError("guest object receipt differs from the authenticated lift/SDK")
             expected = {str(p.resolve()) for p in members if p.suffix == ".c"}
             rows = report["units"]
-            if len(rows) != len(expected) or {str(Path(r["source"]).resolve()) for r in rows} != expected:
+            if len(rows) != len(expected) or {str(Path(r["authenticated_source"]).resolve()) for r in rows} != expected:
                 raise ValueError("guest receipt must contain exactly every generated translation unit")
             for row in rows:
+                validate_object(row, args.sdk)
                 obj = private_path(Path(row["object"]))
                 if row["exit_code"] or digest(Path(row["source"])) != row["sha256"] or digest(obj) != row["object_sha256"]:
                     raise ValueError("guest source/object differs from compiled receipt")
@@ -131,6 +136,42 @@ def main():
         except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError) as error:
             parser.error(str(error))
     units = list(dict.fromkeys(path.resolve() for path in units))
+    # Every selected object, including renderer/kernel and --extra-object inputs,
+    # must have the dependency-tracked receipt produced by the actual compiler.
+    # Old manifests cannot prove header freshness or native-compiler selection.
+    object_records = []
+    try:
+        for obj in units:
+            row = json.loads(obj.with_suffix(".object.json").read_text(encoding="utf-8"))
+            validate_object(row, args.sdk)
+            if Path(row["object"]).resolve() != obj:
+                raise ValueError(f"object receipt selects another file: {obj}")
+            if not {"--target=x86_64-sie-ps5", "-DSC2_PS5=1"}.issubset(row["command"]):
+                raise ValueError(f"object is not compiled for the selected PS5 target: {obj}")
+            if Path(row["compiler"]).resolve().parent != args.llvm.resolve():
+                raise ValueError(f"object was compiled with another LLVM installation: {obj}")
+            if obj.stem == "d3d_shader_compiler":
+                native = "-DRECOMP_SHADERC_LINKED=1" in row["command"]
+                if native != bool(args.shaderc_library):
+                    raise ValueError("shader compiler object mode differs from --shaderc-library; recompile it")
+            object_records.append(row)
+        if args.shaderc_library:
+            shaderc = json.loads(args.shaderc_receipt.read_text(encoding="utf-8"))
+            if (shaderc.get("target") != "x86_64-sie-ps5" or
+                    shaderc.get("configure_exit_code") != 0 or shaderc.get("build_exit_code") != 0 or
+                    Path(shaderc["sdk"]).resolve() != args.sdk.resolve()):
+                raise ValueError("shaderc receipt is not a successful build for this PS5 SDK")
+            matches = [item for item in shaderc["libraries"]
+                       if Path(item["path"]).resolve() == args.shaderc_library.resolve()]
+            if len(matches) != 1 or digest(args.shaderc_library) != matches[0]["sha256"]:
+                raise ValueError("shaderc archive differs from its target build receipt")
+            expected_header = Path(shaderc["header_directory"]).resolve() / "shaderc/shaderc.h"
+            for row in object_records:
+                if Path(row["object"]).stem == "d3d_shader_compiler" and not any(
+                        Path(dep["origin"]).resolve() == expected_header for dep in row["dependencies"]):
+                    raise ValueError("native shader compiler object used headers from another shaderc build")
+    except (ValueError, OSError, KeyError, TypeError) as error:
+        parser.error(f"recompile stale/untracked input: {error}")
     for path in [linker, nm, sdl, radv, *units, *archives, *imports]:
         if not path.is_file():
             parser.error(f"missing link input: {path}")
@@ -193,6 +234,9 @@ def main():
     imported = {name: providers[name] for name in unresolved if name in providers}
     remaining = [name for name in unresolved if name not in providers]
     receipt = dict(command=[str(x) for x in command], exit_code=done.returncode,
+                   object_receipt_schema="sc2.ps5-object.v2",
+                   object_commands=[dict(object=row["object"], command_sha256=row["command_sha256"])
+                                    for row in object_records],
                    unresolved_link_errors=re.findall(r"undefined symbol: ([^\r\n]+)", done.stderr),
                    inputs=[dict(path=str(x.resolve()), sha256=digest(x))
                            for x in [*units, sdl, radv, *archives, *imports]],

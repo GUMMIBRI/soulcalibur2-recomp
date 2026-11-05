@@ -13,7 +13,7 @@ Output:
 
 ```text
 Soulcalibur II/eboot.elf        executable / supplied PlayStation files
-soulcalibur2/disc/             full owned extracted original Xbox disc
+soulcalibur2/disc/             four required owned Xbox files only
 soulcalibur2/textures/         optional converted replacements
 soulcalibur2/shader-cache/     optional provisioned shaders
 PACKAGE-MANIFEST.json          private inventory, sizes and SHA-256 identities
@@ -45,3 +45,21 @@ Existing output directories are rejected and never deleted/replaced. If I/O
 fails during copying, partial output is left for inspection; choose a fresh
 output directory for a retry. Source discs, textures and executable are read
 only. Private manifests and assets must not be committed or published.
+
+## Minimal local storage and asset admission
+
+The default `--asset-mode hardlink` stages disc/textures/shaders without another
+copy of their bytes. Inputs and output must be on the same volume; otherwise
+select `--asset-mode copy` explicitly. Executable and supplied PlayStation
+metadata remain independent copies. Hardlinked asset files share storage with
+the source: treat the local staging tree as read-only. Uploading its bytes later
+to USB creates independent console files. No implicit copying fallback occurs.
+
+Only Default.xbe, root.olk, movie.afs and bgm.afs are taken from the extraction;
+backup executables and other unrelated files are left in place. Texture staging
+includes DDS files only. Shader staging includes only structurally validated
+SC2SPV01 payloads with filename/request identity and supported entry/stage;
+compile receipts, request sources and other host diagnostics are excluded.
+Manifest v2 records each file's copy/hardlink storage mode. Source changes during
+staging are rejected. These changes do not admit the unsupported supplied XBE,
+produce a fake eboot or perform any USB/console operation.

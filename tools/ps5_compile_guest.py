@@ -10,7 +10,7 @@ import subprocess
 import sys
 
 import build_game
-from ps5_compile_host import merged_sources
+from ps5_compile_host import merged_sources, compile_record
 
 ROOT = Path(__file__).resolve().parents[1]
 PRIVATE = ROOT / "private"
@@ -118,23 +118,12 @@ def main():
                 continue
             source = staged / member.name
             obj = out / (member.stem + ".o")
-            temporary = out / (member.stem + ".o.pending")
-            obj.unlink(missing_ok=True)
-            temporary.unlink(missing_ok=True)
-            command = [str(compiler), *flags, "-c", str(source), "-o", str(temporary)]
-            done = subprocess.run(command, capture_output=True, text=True, errors="replace")
-            log = out / (member.stem + ".log")
-            log.write_text(done.stdout + done.stderr, encoding="utf-8")
-            success = done.returncode == 0 and temporary.is_file()
-            if success:
-                os.replace(temporary, obj)
-            else:
-                temporary.unlink(missing_ok=True)
-            rows.append(dict(source=str(member), sha256=digest(member), command=command,
-                             exit_code=done.returncode, log=str(log),
-                             object=str(obj) if success else None,
-                             object_sha256=digest(obj) if success else None))
-            print(f"{'compiled' if success else 'FAILED'}: {member.name}", flush=True)
+            command = [str(compiler), *flags, "-c", str(source), "-o", str(obj)]
+            row = compile_record(source, obj, command, sdk, out / (member.stem + ".log"))
+            # Retain the authenticated generated-source identity for link admission.
+            row["authenticated_source"] = str(member)
+            rows.append(row)
+            print(f"{'compiled' if row['object'] else 'FAILED'}: {member.name}", flush=True)
         # Hardlinked sources can be modified through either name; reauthenticate.
         authenticate(args.program, args.xbe)
         unchanged_headers = (all(Path(p).is_file() and digest(Path(p)) == sha for p, sha in headers.items())

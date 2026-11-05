@@ -81,6 +81,52 @@ def executable_elf(path):
             raise ValueError("ELF entry is outside every executable load segment")
 
 
+def shader_payload(path):
+    """Admit only exact provision payloads, never receipts/source requests."""
+    from ps5_provision_shaders import LIMIT, validate_spirv
+    if not re.fullmatch(r"[0-9a-f]{64}\.spv", path.name):
+        raise ValueError(f"shader filename must be its exact request identity: {path.name}")
+    if path.stat().st_size > LIMIT + 400:
+        raise ValueError(f"shader payload exceeds the runtime limit: {path.name}")
+    with path.open("rb") as stream:
+        magic, key, entry = (stream.readline(limit) for limit in (10, 66, 258))
+        if magic != b"SC2SPV01\n" or key != (path.stem + "\n").encode():
+            raise ValueError(f"invalid shader payload header: {path.name}")
+        if not entry.endswith(b"\n"):
+            raise ValueError(f"invalid shader entry: {path.name}")
+        entry = entry[:-1].decode("ascii")
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]{0,255}", entry):
+            raise ValueError(f"invalid shader entry: {path.name}")
+        code = stream.read(LIMIT + 1)
+    # The payload carries its exact entry; its stage is inside OpEntryPoint.
+    for stage in (0, 4):
+        try:
+            validate_spirv(code, stage, entry)
+            return
+        except ValueError:
+            pass
+    raise ValueError(f"invalid shader stage/entry or SPIR-V: {path.name}")
+
+
+def stage_file(source, destination, hardlink):
+    """Assets can share storage locally; executable/metadata stay independent."""
+    before = source.stat()
+    if hardlink:
+        os.link(source, destination)
+        value = digest(destination)
+    else:
+        value_hash = hashlib.sha256()
+        with source.open("rb") as incoming, destination.open("xb") as outgoing:
+            for block in iter(lambda: incoming.read(1024 * 1024), b""):
+                outgoing.write(block)
+                value_hash.update(block)
+        value = value_hash.hexdigest()
+    after = source.stat()
+    if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+        raise ValueError("source changed during staging; partial output retained")
+    return value
+
+
 def package(args):
     output, executable, disc = map(plain_path, (args.output, args.eboot, args.disc))
     if output == PRIVATE.resolve() or not output.is_relative_to(PRIVATE.resolve()):
@@ -92,16 +138,15 @@ def package(args):
     if any(part in (".", "..") for part in args.console_eboot_dir.split("/")):
         raise ValueError("console eboot directory may not contain dot path components")
     executable_elf(executable)
-    disc_files = files_in(disc)
     for name in REQUIRED_DISC:
-        if not (disc / name).is_file():
+        if not plain_path(disc / name).is_file():
             raise ValueError(f"missing original Xbox disc input: {name}")
     xbe_hash = digest(disc / "Default.xbe")
     if xbe_hash not in USA_XBE_HASHES:
         raise ValueError("unsupported Default.xbe; this package requires the original USA Xbox executable")
     # Validate every input and destination before copying even the executable.
     copies = [(executable, Path("Soulcalibur II/eboot.elf"))]
-    copies += [(p, Path("soulcalibur2/disc") / p.relative_to(disc)) for p in disc_files]
+    copies += [(p, Path("soulcalibur2/disc") / p.relative_to(disc)) for p in (disc / name for name in REQUIRED_DISC)]
     inputs = [executable, disc]
     for option, relative in ((args.textures, "soulcalibur2/textures"),
                              (args.shader_cache, "soulcalibur2/shader-cache"),
@@ -111,8 +156,14 @@ def package(args):
             inputs.append(source)
             for path in files_in(source):
                 local = path.relative_to(source)
+                if relative == "soulcalibur2/shader-cache":
+                    if path.suffix != ".spv":
+                        continue  # Local compile receipts/requests are not runtime inputs.
+                    shader_payload(path)
+                if relative == "soulcalibur2/textures" and path.suffix.lower() != ".dds":
+                    continue
                 if relative == "Soulcalibur II" and local.parts[0].lower() in {
-                    "storage", "saves", "settings.ini", "shader-requests", ".mesa-streams", "screenshots"
+                    "storage", "saves", "settings.ini", "shader-requests", "shader-cache", ".mesa-streams", "screenshots"
                 }:
                     raise ValueError("PlayStation metadata input must not contain saves/settings/runtime output")
                 copies.append((path, Path(relative) / local))
@@ -122,30 +173,34 @@ def package(args):
     destinations = [relative.as_posix().casefold() for _, relative in copies]
     if len(destinations) != len(set(destinations)):
         raise ValueError("input files collide in the destination (including case-only collisions)")
+    if args.asset_mode == "hardlink":
+        ancestor = output.parent
+        while not ancestor.exists():
+            ancestor = ancestor.parent
+        for source, relative in copies:
+            if relative.parts[0] == "soulcalibur2" and source.stat().st_dev != ancestor.stat().st_dev:
+                raise ValueError("asset hardlinks require the same volume; choose --asset-mode copy explicitly")
     output.mkdir(parents=True, exist_ok=False)
     manifest = []
     for source, relative in copies:
         destination = output / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
-        value = hashlib.sha256()
-        # Exclusive file creation protects the fresh package even if interrupted.
-        with source.open("rb") as incoming, destination.open("xb") as outgoing:
-            for block in iter(lambda: incoming.read(1024 * 1024), b""):
-                outgoing.write(block)
-                value.update(block)
-        if relative == Path("soulcalibur2/disc/Default.xbe") and value.hexdigest() != xbe_hash:
-            raise ValueError("Default.xbe changed during copying; partial output retained for inspection")
+        linked = args.asset_mode == "hardlink" and relative.parts[0] == "soulcalibur2"
+        value = stage_file(source, destination, linked)
+        if relative == Path("soulcalibur2/disc/Default.xbe") and value != xbe_hash:
+            raise ValueError("Default.xbe changed during staging; partial output retained")
         if relative == Path("Soulcalibur II/eboot.elf"):
             executable_elf(destination)
         manifest.append(dict(path=relative.as_posix(), bytes=destination.stat().st_size,
-                             sha256=value.hexdigest()))
-    receipt = dict(format="SC2-PRIVATE-PACKAGE-1", files=manifest, original_xbe_sha256=xbe_hash,
+                             sha256=value, storage="hardlink" if linked else "copy"))
+    receipt = dict(format="SC2-PRIVATE-PACKAGE-2", asset_mode=args.asset_mode, files=manifest, original_xbe_sha256=xbe_hash,
                    console_eboot_dir=args.console_eboot_dir, console_assets="/mnt/usbN/soulcalibur2 or read-only /data/soulcalibur2",
                    saves="Soulcalibur II/storage", uploaded=False, console_executed=False,
                    playability_verified=False)
     (output / "PACKAGE-MANIFEST.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
     (output / "INSTALL.txt").write_text(
         "PRIVATE: contains owned game assets; do not publish this folder.\n"
+        "Local asset hardlinks share their source bytes; treat staged assets as read-only.\n"
         "Copy Soulcalibur II/ to the chosen executable folder and soulcalibur2/ to USB.\n"
         "Assets already in /data/soulcalibur2 may be read there; this tool never writes /data.\n"
         "Preserve existing storage/, settings.ini and other runtime output beside eboot.elf.\n"
@@ -162,6 +217,8 @@ def main():
     parser.add_argument("--disc", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--console-eboot-dir", required=True)
+    parser.add_argument("--asset-mode", choices=("hardlink", "copy"), default="hardlink",
+                        help="default avoids duplicate disc/texture bytes; copy is explicit for other volumes")
     parser.add_argument("--textures", type=Path)
     parser.add_argument("--shader-cache", type=Path)
     parser.add_argument("--playstation-files", type=Path)
