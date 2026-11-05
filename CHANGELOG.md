@@ -10,6 +10,10 @@
 - **Guest converter consistency**: keep Python floating-point addition in the same order as the C++ builder, including on Python 3.12 and newer.
 - **Heihachi hair lighting**: correct PS2 material parsing so white hair no longer receives incorrect colored highlights.
 
+- **No more freeze in the Museum on a new save**: with the guest characters loaded, Mode Select showed Museum
+  before anything in it was unlocked, and pressing Down in its empty menu froze the game. The Museum now shows once
+  something in it is unlocked, as on the Xbox.
+
 ## 0.2.2-beta.1
 
 A fix for the game closing with "The game stopped with code 2" as a fight loads, and clearer messages when the game

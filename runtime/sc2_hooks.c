@@ -488,6 +488,26 @@ static void profile_item(void)
     sub_000569B0();
 }
 
+/* 0x77520, one of the states Mode Select's Museum entry is shown by (0x77760): the highest of the characters'
+   (1 to 32) unlock states, 0x56980, 3 at the first that is 3. That reads the character's unlock item from a table
+   (0x1A22B8) that has none (-1) for 27 and 28, and an item -1 is had (0x56690), so with a guest selectable the
+   Museum showed on a fresh save with none of its own entries, and Down in it looked for one forever (0x77860).
+   The guests count for nothing here; character select and the others still take them as had. */
+static void museum_characters(void)
+{
+    const RecompRegisters saved = recomp_runtime.registers;
+    uint32_t state = 0u;
+    for (uint32_t character = 1u; character < 0x21u && state != 3u; ++character) {
+        if (character == 27u || character == 28u) continue;
+        kernel_call_guest(0x00056980u, &character, 1u);
+        const uint32_t own = recomp_runtime.registers.eax;
+        recomp_runtime.registers = saved;
+        if (own == 3u || own == 2u) state = own;
+    }
+    recomp_runtime.registers.eax = state;
+    recomp_runtime.registers.esp += 4u;   /* the original's ret */
+}
+
 /* The menus' boxes, drawn outside the 2D layer: 0x2ED80 their fill and 0x2EC90 their frame (the caption strip of
    the Museum's profile viewer, the character select's name box). The free camera's clean view leaves them out too. */
 static void box_fill(void)
@@ -544,6 +564,7 @@ RecompFunction recomp_sc2_hooks_lookup_manual(uint32_t address)
     case 0x000331b0u: return layer_2d;
     case 0x0002ed80u: return box_fill;
     case 0x000569b0u: return profile_item;
+    case 0x00077520u: return museum_characters;
     case 0x0002ec90u: return box_frame;
     case 0x00032630u: return frame_begins;
     default: return sc2_wm_select_lookup(address);
