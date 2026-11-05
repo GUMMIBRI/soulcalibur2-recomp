@@ -75,3 +75,7 @@ In the game, Esc, F1 or a gamepad's Back opens the in-game menu. Online, both pl
 
 $list
 EOF
+
+# Fork release credit: keep this as the final note in the generated body.
+printf '\n'
+cat "$root/platform/ps5/RELEASE-ENDNOTE.md"
