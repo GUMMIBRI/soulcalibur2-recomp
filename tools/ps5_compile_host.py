@@ -19,6 +19,12 @@ SOURCES = (
     "audio_output_sdl.cpp", "input_host_win32.c", "d3d_presenter_inline.cpp",
     "../xbe/sha.cpp",
     "sc2_settings.cpp", "sc2_menu.cpp",
+    "d3d_shader_chain.cpp", "d3d_draw_shader.cpp", "d3d_display_phase.cpp",
+    "d3d_pixel_program.cpp", "d3d_vertex_program.cpp", "d3d_draw_model.c",
+    "d3d_texture_model.c", "d3d_texture_replace.cpp", "d3d_vblank.cpp",
+    "d3d_shader_preset.cpp", "overlay_sdl_gpu.cpp", "overlay_imgui_panel.cpp",
+    "overlay_text.c", "screenshot.c", "input_keyboard_win32.c", "audio_reverb.cpp",
+    "xapi_clock.cpp", "dsound_hrtf.c", "sc2_touch.cpp", "sc2_memstream.cpp",
 )
 
 
@@ -27,11 +33,17 @@ def main():
     parser.add_argument("--sdk", required=True, type=Path)
     parser.add_argument("--llvm", required=True, type=Path, help="LLVM bin directory")
     parser.add_argument("--sdl", required=True, type=Path, help="console SDL3 install prefix")
+    parser.add_argument("--imgui", type=Path, default=ROOT / "private/deps/imgui-1.91.9",
+                        help="upstream pinned ImGui source directory (v1.91.9)")
+    parser.add_argument("--compiler-rt", type=Path, help="licensed compiler-rt cpu_model source directory")
+    parser.add_argument("--only", action="append", help="compile only these source basenames (repeatable)")
     args = parser.parse_args()
     sdk, llvm, sdl = args.sdk.resolve(), args.llvm.resolve(), args.sdl.resolve()
+    imgui = args.imgui.resolve()
     suffix = ".exe" if sys.platform == "win32" else ""
     for required in (sdk / "target/include/c++/v1/string", sdl / "include/SDL3/SDL.h",
-                     llvm / ("clang++" + suffix), RUNTIME / SOURCES[0]):
+                     llvm / ("clang++" + suffix), RUNTIME / SOURCES[0], imgui / "imgui.h",
+                     imgui / "backends/imgui_impl_sdlgpu3.cpp"):
         if not required.is_file():
             parser.error(f"missing input: {required}")
     out = ROOT / "private/ps5-host-objects"
@@ -41,7 +53,7 @@ def main():
     common = ["--target=x86_64-sie-ps5", "-isysroot", str(sdk),
               "-DSC2_PS5=1", "-fno-stack-protector", "-femulated-tls", "-fPIC",
               "-ffp-contract=off", "-fno-strict-aliasing", "-fwrapv",
-              "-I", str(sdl / "include"), "-I", str(RUNTIME), "-I", str(out)]
+              "-I", str(sdl / "include"), "-I", str(RUNTIME), "-I", str(out), "-I", str(imgui)]
     # Include the actual inline path adapter; no fake runner or guest entrypoint.
     adapter = out / "sc2_ps5_paths.cpp"
     adapter.write_text('#include "sc2_ps5.h"\n'
@@ -50,8 +62,21 @@ def main():
                        'return sc2::PS5LaunchPaths(x, d, s, c, e);\n}\n')
     results = []
     # Match build_game.py's game-overrides-shared merge semantics.
-    for source in [*(ROOT / "runtime" / name if (ROOT / "runtime" / name).is_file()
-                     else RUNTIME / name for name in SOURCES), adapter]:
+    imgui_sources = [imgui / name for name in ("imgui.cpp", "imgui_draw.cpp", "imgui_tables.cpp",
+                    "imgui_widgets.cpp", "backends/imgui_impl_sdlgpu3.cpp")]
+    sources = [*(ROOT / "runtime" / name if (ROOT / "runtime" / name).is_file()
+                 else RUNTIME / name for name in SOURCES), *imgui_sources, adapter]
+    if args.compiler_rt:
+        for name in ("x86.c", "cpu_model.h", "LICENSE.TXT"):
+            if not (args.compiler_rt / name).is_file():
+                parser.error(f"missing compiler-rt input: {name}")
+        sources.append(args.compiler_rt.resolve() / "x86.c")
+    if args.only:
+        unknown = set(args.only) - {source.name for source in sources}
+        if unknown:
+            parser.error("unknown selected sources: " + ", ".join(sorted(unknown)))
+        sources = [source for source in sources if source.name in args.only]
+    for source in sources:
         cxx = source.suffix == ".cpp"
         compiler = llvm / (("clang++" if cxx else "clang") + suffix)
         obj = out / (source.stem + ".o")
@@ -70,7 +95,8 @@ def main():
                             command=command, exit_code=done.returncode, log=str(log),
                             object=str(obj) if done.returncode == 0 and obj.is_file() else None))
         print(f"{'compiled' if done.returncode == 0 else 'FAILED'}: {source.name}", flush=True)
-    (out / "receipt.json").write_text(json.dumps(dict(
+    receipt = "receipt-selected.json" if args.only else "receipt.json"
+    (out / receipt).write_text(json.dumps(dict(
         sdk=str(sdk), sdl=str(sdl), llvm=str(llvm), units=results,
         linked=False, executed=False), indent=2) + "\n", encoding="utf-8")
     return int(any(row["exit_code"] != 0 for row in results))

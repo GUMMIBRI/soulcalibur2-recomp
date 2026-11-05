@@ -1226,6 +1226,12 @@ int main(int argc, char **argv)
         }
         const auto requests = std::filesystem::path(settingsPath).parent_path() / "shader-requests";
         setenv("SC2_PS5_SHADER_REQUESTS", requests.string().c_str(), 1);
+        // The shared screenshot writer otherwise falls back to HOME/Pictures,
+        // which a payload loader may place on the owner's read-only /data tree.
+        const auto screenshots = std::filesystem::path(settingsPath).parent_path() / "screenshots";
+        setenv("RECOMP_SCREENSHOT_DIR", screenshots.string().c_str(), 1);
+        const auto streams = std::filesystem::path(settingsPath).parent_path() / ".mesa-streams";
+        setenv("SC2_PS5_STREAM_DIR", streams.string().c_str(), 1);
     }
 #endif
     if (xbePath.empty() == discImage.empty()) {

@@ -1,5 +1,12 @@
 # PS5 homebrew port
 
+LATEST: renderer support and SDK link closure have advanced beyond the early
+checkpoints below. Thirty renderer/menu/overlay units plus five real CPU/audio/
+timing/touch/memory-stream support units compiled. Strict shared linkage with
+real SDK imports/CRT/layout now fails only at recomp_kernel_wait_for_vblank,
+the genuine full-runtime scheduler boundary. No successful payload or console
+run. Full detail and commands: gpu/README.md, integrated SDK closure follow-up.
+
 Working checkout: C:/SC2. Upstream base: tmcleroy/soulcalibur2-recomp
 57260db87c4b7dfe9e9fd620a5e6cee48f2dbb05. Runtime submodule:
 tmcleroy/doa2u-re 8464693079a9feb32ab38136a224caf9163d6b71.

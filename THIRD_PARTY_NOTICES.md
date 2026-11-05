@@ -38,6 +38,7 @@ the player downloaded themselves.
 | [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) | Apache-2.0 ([SPIRV-Cross.txt](docs/licenses/SPIRV-Cross.txt)) | The macOS game: its shaders turned into Metal |
 | [slang-shaders](https://github.com/libretro/slang-shaders) (commit `2b0530b`) | Each file its own, stated at its top: crt-geom-mini (after cgwg's crt-geom), CRT Royale (TroggleMonkey), CRT Guest (guest(r), Dr. Venom) and zfast-crt, CRT Light (Greg Hogan) GPL-2.0-or-later; CRT Lottes (Timothy Lottes), scanline-fract (hunterk) and sharp-bilinear-scanlines (rsn8887) public domain; xBRZ (Hyllian, Zenju) and ScaleFX (Sp00kyFox) and the blur and gamma includes MIT; the stock pass (libretro), ossc (DariusG) and integer-scaling-scanlines with no notice | The Graphics page's shader presets, in `shaders/` beside the game (`tools/shaders.sh`), each file with its header |
 | LLVM's libc++ and libunwind (from [llvm-mingw](https://github.com/mstorsjo/llvm-mingw)) | Apache-2.0 with LLVM exceptions ([llvm-mingw.txt](docs/licenses/llvm-mingw.txt)) | `libc++.dll` and `libunwind.dll` in the Windows folder |
+| LLVM compiler-rt CPU dispatch (`llvmorg-18.1.8`, `lib/builtins/cpu_model/x86.c` and `cpu_model.h`) | Apache-2.0 WITH LLVM-exception (external source directory's `LICENSE.TXT`, required by the PS5 build) | Compiled from caller-supplied public sources through `SC2_PS5_COMPILER_RT_DIR` to provide RADV's real `__cpu_model`; no source or binary is bundled here |
 
 ## Used while developing (nothing of it here or in the releases)
 
