@@ -26,6 +26,8 @@ const recomp::BindTable &BindingTable();
 struct Settings {
 #if defined(SC2_PS5)
     bool ps5_widescreen = true, ps5_fullscreen = true;
+    bool fsr1 = false;
+    int fsr1_sharpness = 0;  /* RCAS stops: 0 strong, 1 balanced, 2 soft */
 #endif
     unsigned scale = 1;   /* internal resolution: N times 640x480 */
     int shader = 0;       /* the Shader feature's choice (ShaderPreset) */

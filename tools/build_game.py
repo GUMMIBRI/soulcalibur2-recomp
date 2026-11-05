@@ -60,6 +60,7 @@ GAME_SOURCES = ["sc2_hooks.c", "sc2_settings.cpp", "sc2_input.cpp", "sc2_menu.cp
 
 
 GAME_SOURCES.append("sc2_memstream.cpp")
+GAME_SOURCES.append("sc2_fsr.cpp")
 
 
 def sha256(path):

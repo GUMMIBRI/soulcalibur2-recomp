@@ -66,6 +66,27 @@ real SDK providers, zero lack a provider. No console execution was performed.
 
 ## Remaining game boundary
 
+UPDATE after runner/FSR integration: --group adapters compiles the 32 actual
+runner adapter/loader units; --group game reads GAME_SOURCES from the actual
+tools/build_game.py declaration rather than maintaining an unrelated list.
+--full-runner links these plus real runner/kernel/renderer/SDK objects. Its
+strict failure list contains exactly 33 generated guest symbols, with zero
+other unresolved symbols. Logs/receipts are separate strict-runner-* files,
+so a failed game link no longer removes the successful host-module artifact.
+
+The compile tool now mirrors the actual source/header merge into ignored
+private/ps5-host-source/. Quoted includes must see game-specific sibling headers;
+an -I-only override cannot guarantee that for directly compiled shared sources.
+Only code/headers are staged. Targeted successful fixes update their group
+manifests, and full-runner linking rejects failed or changed source inputs.
+Free-camera motion uses the PS5 monotonic clock instead of unsupported C11
+timespec_get. No guest body or asset substitute is staged by these tools.
+
+FSR1 presentation and its three provisioned fixed shaders are now implemented;
+details in fsr/README.md. Native scale, FSR and HD texture replacement remain
+separate choices. Unknown game draw shaders still require provisioning or a
+supported target shader compiler. No game was run to collect them in this batch.
+
 sc2-gpu-host.so is a linked host integration module, not a bootable game or PS5
 package. The actual game runner still needs all game/platform adapters linked
 with a locally lifted original USA Xbox executable and matching disc assets.

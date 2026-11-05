@@ -1,5 +1,19 @@
 # PS5 homebrew port
 
+LATEST runner/FSR checkpoint: real runner adapters and game-side native sources
+compile for PS5. Strict full-runner linking now reports only 33 generated guest
+symbols (recomp_lookup and original sub_* routines), no host/SDK/FSR imports.
+No bodies or success stubs were invented for these absent game functions.
+
+FSR1 EASU/RCAS is implemented, optional/off by default, with persisted live
+enable/sharpness and effective status. It follows game composition and precedes
+overlay rendering; preserves source crop/aspect bars; bypasses equal/downscale;
+falls back on resource/shader failure. Resource sizes are bounded and retirement
+uses SDL's deferred release. Three fixed shaders were compiled/provisioned and
+staged beside the converted HD pack under shader-cache/. No console output,
+image-quality or performance claim. See fsr/README.md. Earlier FSR-missing
+statements below are historical; dynamic game-shader coverage is still pending.
+
 CURRENT kernel checkpoint: real scheduler/fiber/file compatibility is now
 integrated. Strict shared-host module linkage succeeds, with all 333 strong
 dynamic imports covered by actual SDK providers. The runner source compiles,

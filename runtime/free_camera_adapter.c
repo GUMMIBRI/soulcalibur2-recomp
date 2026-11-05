@@ -163,7 +163,13 @@ static bool pressed(const RecompInputGamepad *g, unsigned analog)
 static double seconds_now(void)
 {
     struct timespec now;
+#if defined(SC2_PS5)
+    // This clock measures camera motion deltas; wall-clock adjustments must
+    // not turn a small analog input into a large jump on the console.
+    return clock_gettime(CLOCK_MONOTONIC, &now) != 0 ? 0.0 : (double)now.tv_sec + now.tv_nsec / 1e9;
+#else
     return timespec_get(&now, TIME_UTC) == 0 ? 0.0 : (double)now.tv_sec + now.tv_nsec / 1e9;
+#endif
 }
 
 static void set_active(bool active)

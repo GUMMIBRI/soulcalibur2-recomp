@@ -21,7 +21,7 @@ PLATFORM_OBJECTS = (
     "d3d_draw_model", "d3d_texture_model", "d3d_texture_replace", "d3d_vblank",
     "d3d_shader_preset", "d3d_display_phase", "overlay_sdl_gpu", "overlay_imgui_panel",
     "overlay_text", "screenshot", "input_keyboard_win32", "audio_reverb",
-    "audio_output_sdl", "input_host_win32", "sha", "sc2_ps5_paths",
+    "audio_output_sdl", "input_host_win32", "sha", "sc2_ps5_paths", "sc2_fsr",
     "imgui", "imgui_draw", "imgui_tables", "imgui_widgets", "imgui_impl_sdlgpu3",
 )
 KERNEL_OBJECTS = (
@@ -60,6 +60,8 @@ def main():
     parser.add_argument("--extra-object", type=Path, action="append", default=[],
                         help="add a real support object to the standard renderer set")
     parser.add_argument("--kernel", action="store_true", help="include actual compiled recomp_kernel objects")
+    parser.add_argument("--full-runner", action="store_true",
+                        help="include actual runner/adapter/game objects; generated guest still required")
     args = parser.parse_args()
     suffix = ".exe" if sys.platform == "win32" else ""
     linker = args.llvm / ("ld.lld" + suffix)
@@ -78,8 +80,20 @@ def main():
         "libSceSystemService.so", "libSceSysmodule.so")]
     units = args.objects or [ROOT / f"private/ps5-host-objects/{name}.o" for name in PLATFORM_OBJECTS]
     units = [*units, *args.extra_object]
-    if args.kernel:
+    if args.kernel or args.full_runner:
         units += [ROOT / f"private/ps5-host-objects/{name}.o" for name in KERNEL_OBJECTS]
+    if args.full_runner:
+        for group in ("runner", "adapters", "game"):
+            manifest = ROOT / f"private/ps5-host-objects/receipt-{group}.json"
+            if not manifest.is_file():
+                parser.error(f"compile --group {group} first")
+            for row in json.loads(manifest.read_text(encoding="utf-8"))["units"]:
+                if row["exit_code"] != 0 or not row["object"]:
+                    parser.error(f"source still failed in {group}: {row['source']}")
+                source = Path(row["source"])
+                if not source.is_file() or digest(source) != row["sha256"]:
+                    parser.error(f"recompile changed {group} source: {source}")
+                units.append(Path(row["object"]))
     units = list(dict.fromkeys(path.resolve() for path in units))
     for path in [linker, nm, sdl, radv, *units, *archives, *imports]:
         if not path.is_file():
@@ -93,12 +107,15 @@ def main():
             parser.error(f"{path} does not provide required backend symbol {symbol}")
     out = ROOT / "private/ps5-gpu-link"
     out.mkdir(parents=True, exist_ok=True)
-    linked = out / ("sc2-gpu-host.so" if args.strict_shared else "sc2-gpu-platform.o")
+    linked = out / ("sc2-runner.so" if args.full_runner and args.strict_shared else
+                    "sc2-gpu-host.so" if args.strict_shared else "sc2-gpu-platform.o")
     linked.unlink(missing_ok=True)
     command = [linker, "-L", sdk_lib, "--wrap=fflush", "--wrap=fclose",
                *( ["-shared", "--no-undefined"] if args.strict_shared else ["-r"] ),
                "--start-group", *units, sdl, radv, *archives,
                "--end-group", "-o", linked]
+    if args.full_runner:
+        command.append("--error-limit=0")
     if args.strict_shared:
         # Real import libraries are legitimate inputs to a shared-module link,
         # but cannot be embedded into ld -r output. No fake main is introduced.
@@ -111,7 +128,7 @@ def main():
             parser.error(f"missing public SDK linker layout: {layout}")
         command.extend(["-T", layout, "--eh-frame-hdr"])
     done = run(command)
-    log_name = "strict-link.log" if args.strict_shared else "link.log"
+    log_name = "strict-runner-link.log" if args.full_runner and args.strict_shared else "strict-link.log" if args.strict_shared else "link.log"
     (out / log_name).write_text(done.stdout + done.stderr, encoding="utf-8")
     unresolved, weak = [], []
     if done.returncode == 0:
@@ -121,7 +138,7 @@ def main():
         rows = [line.split() for line in names.stdout.splitlines()]
         unresolved = sorted({row[0] for row in rows if len(row) > 1 and row[1] == "U"})
         weak = sorted({row[0] for row in rows if len(row) > 1 and row[1] in ("w", "v")})
-        unresolved_name = "strict-unresolved.txt" if args.strict_shared else "unresolved.txt"
+        unresolved_name = "strict-runner-unresolved.txt" if args.full_runner and args.strict_shared else "strict-unresolved.txt" if args.strict_shared else "unresolved.txt"
         (out / unresolved_name).write_text("\n".join(unresolved) + "\n", encoding="utf-8")
     providers = {}
     for library in imports:
@@ -144,7 +161,7 @@ def main():
                    sdk_import_coverage=imported, unresolved_without_sdk_import=remaining,
                    optional_weak_symbols=weak,
                    unresolved_gpu_api=[x for x in unresolved if x.startswith(("SDL_", "vk_", "vkCreate"))])
-    receipt_name = "strict-receipt.json" if args.strict_shared else "receipt.json"
+    receipt_name = "strict-runner-receipt.json" if args.full_runner and args.strict_shared else "strict-receipt.json" if args.strict_shared else "receipt.json"
     (out / receipt_name).write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
     if done.returncode:
         print(done.stderr, file=sys.stderr)

@@ -10,6 +10,9 @@
 
 #include "sc2_settings.h"
 #include "sc2_ps5.h"
+#if defined(SC2_PS5)
+#include "sc2_fsr.h"
+#endif
 #include "sc2_online.h"
 #include "sc2_state.h"
 #include "sc2_version.h"
@@ -54,6 +57,9 @@ int shader_choice;
 std::vector<size_t> menu_features;
 #if defined(SC2_PS5)
 int next_resolution = 0, next_aspect = 0, next_fullscreen = 0;
+bool fsr_enabled = false;
+int fsr_sharpness = 0;
+int fsr_status_command = -1;
 #endif
 
 /* The features the menu changes while playing: training's, and what an online match shows (sc2_online.h). -1: not
@@ -61,6 +67,8 @@ int next_resolution = 0, next_aspect = 0, next_fullscreen = 0;
 int FeatureValue(const std::string &name)
 {
 #if defined(SC2_PS5)
+    if (name == "fsr1") return fsr_enabled;
+    if (name == "fsr1_sharpness") return fsr_sharpness;
     if (name == "resolution") return next_resolution;
     if (name == "ps5_widescreen") return next_aspect;
     if (name == "ps5_fullscreen") return next_fullscreen;
@@ -91,6 +99,16 @@ int FeatureValue(const std::string &name)
 void SetFeatureValue(const std::string &name, int value)
 {
 #if defined(SC2_PS5)
+    if (name == "fsr1") {
+        fsr_enabled = value != 0;
+        sc2_fsr_set_options(fsr_enabled ? 1 : 0, fsr_sharpness);
+        return;
+    }
+    if (name == "fsr1_sharpness") {
+        fsr_sharpness = std::clamp(value, 0, 2);
+        sc2_fsr_set_options(fsr_enabled ? 1 : 0, fsr_sharpness);
+        return;
+    }
     if (name == "resolution") { next_resolution = value; return; }
     if (name == "ps5_widescreen") { next_aspect = value; return; }
     if (name == "ps5_fullscreen") { next_fullscreen = value; return; }
@@ -222,6 +240,11 @@ void Configure()
                      : "Their game is version " + one.version + " and yours " SC2_VERSION ": both need the same to play."});
         }
     }
+#if defined(SC2_PS5)
+    fsr_status_command = static_cast<int>(config.commands.size());
+    config.commands.push_back({"Graphics", "FSR1 effective status",
+        "Shows the renderer's latest state. Resume gameplay to apply changed FSR1 options to a new frame."});
+#endif
     config.speeds = kSpeeds;
     config.normalSpeed = kFullSpeed;
     config.speedDescription = "Slows the game down or speeds it up (- and = while playing). P pauses it, and . goes on a "
@@ -380,6 +403,12 @@ void Run(bool scripted)
             Configure();
         }
         const recomp::Menu::Chosen chosen = menu.Buttons(pressed);
+#if defined(SC2_PS5)
+        if (chosen.kind == recomp::Menu::Chosen::Command && chosen.id == fsr_status_command) {
+            const char *status = sc2_fsr_status();
+            menu.Note(std::string("FSR1: ") + (status ? status : "Unavailable"));
+        } else
+#endif
         if (chosen.kind == recomp::Menu::Chosen::Command && chosen.id == kJoinCode) {
             typing_code = true;
             typed_code.clear();
@@ -654,10 +683,13 @@ void InstallMenu(const std::string &settingsPath, const std::string &shotSpec)
     const auto &features = Features();
     const auto values = recomp::FeatureValues(ini, features);
     for (size_t i = 0; i < features.size(); ++i) {
+        if (features[i].name == "fsr1") fsr_enabled = values[i] != 0;
+        if (features[i].name == "fsr1_sharpness") fsr_sharpness = std::clamp(values[i], 0, 2);
         if (features[i].name == "resolution") next_resolution = values[i];
         if (features[i].name == "ps5_widescreen") next_aspect = values[i];
         if (features[i].name == "ps5_fullscreen") next_fullscreen = values[i];
     }
+    sc2_fsr_set_options(fsr_enabled ? 1 : 0, fsr_sharpness);
 #endif
     const recomp::BindTable &table = BindingTable();
     bindings = settingsPath.empty() ? recomp::DefaultBindings(table) : recomp::LoadBindings(settingsPath, table);

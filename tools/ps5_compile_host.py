@@ -6,11 +6,13 @@ Produces objects and a machine-readable command/diagnostic receipt, not a
 linked game or SDK compatibility claim. No downloads or console operations.
 """
 import argparse
+import ast
 import hashlib
 import json
 from pathlib import Path
 import subprocess
 import sys
+import shutil
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME = ROOT / "third_party/doa2u-re/recomp-runtime"
@@ -25,6 +27,7 @@ SOURCES = (
     "d3d_shader_preset.cpp", "overlay_sdl_gpu.cpp", "overlay_imgui_panel.cpp",
     "overlay_text.c", "screenshot.c", "input_keyboard_win32.c", "audio_reverb.cpp",
     "xapi_clock.cpp", "dsound_hrtf.c", "sc2_touch.cpp", "sc2_memstream.cpp",
+    "sc2_fsr.cpp",
 )
 KERNEL_SOURCES = (
     "runtime.c", "stop_report.c", "guest_heap.c", "xapi_clock.cpp", "native_fiber.c", "fiber_switch_x86_64.S",
@@ -35,6 +38,65 @@ KERNEL_SOURCES = (
     "device_model.c", "apu_model.c", "ohci_model.c", "directory_model.c",
     "symbolic_link_model.c", "save_transaction.cpp", "win32_compat.c",
 )
+ADAPTER_SOURCES = (
+    "program_adapters.c", "program_manual.c", "d3d8_adapter.c", "d3d8_state_adapter.c",
+    "d3d8_resource_adapter.c", "d3d8_draw_adapter.c", "d3d_device_model.c", "d3d_light_model.c",
+    "d3d_render_state_model.c", "d3d_card_model.c", "d3d_frame_model.c", "d3d_tile_model.c",
+    "d3d_vertex_shader_model.c", "dsound_api_adapter.c", "dsound_device_model.c",
+    "dsound_buffer_adapter.c", "dsound_buffer_model.c", "dsound_effects_adapter.c",
+    "dsound_effects_image.c", "dsound_mix_model.c", "xbox_adpcm.c", "input_model.c",
+    "input_adapter.c", "input_host_win32.c", "input_pulse_source.c", "free_camera.c",
+    "free_camera_adapter.c", "scene_freeze.c", "scene_freeze_adapter.c", "host_diagnostics.cpp",
+    "runner_load.cpp", "../xbe/xbe_parser.cpp",
+)
+
+
+def merged_sources():
+    """Match the real build's header/source overrides without Windows symlinks.
+
+    Quoted includes search a source's sibling directory before -I, so compiling
+    the shared file directly can silently pick the wrong game's manual header.
+    Only source/header files are copied into ignored private build storage.
+    """
+    base = ROOT / "private/ps5-host-source"
+    runtime = base / "recomp-runtime"
+    runtime.mkdir(parents=True, exist_ok=True)
+    origins = {}
+    for folder in (RUNTIME, ROOT / "runtime"):
+        for source in folder.rglob("*"):
+            if source.is_file() and source.suffix in (".h", ".c", ".cpp", ".S", ".inc"):
+                origins[source.relative_to(folder)] = source
+    for staged in runtime.rglob("*"):
+        if (staged.is_file() and staged.suffix in (".h", ".c", ".cpp", ".S", ".inc") and
+            staged.relative_to(runtime) not in origins):
+            if not staged.resolve().is_relative_to(runtime.resolve()):
+                raise ValueError("staged source resolves outside the private merge directory")
+            staged.unlink()
+    for relative, source in origins.items():
+        destination = runtime / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
+    for directory in (ROOT / "recomp-common", RUNTIME.parent / "xbe"):
+        for source in directory.rglob("*"):
+            if source.is_file() and source.suffix in (".h", ".c", ".cpp", ".inc"):
+                destination = base / directory.name / source.relative_to(directory)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, destination)
+    return runtime
+
+
+def game_sources():
+    """Use the same source declarations as the actual game builder."""
+    names = []
+    tree = ast.parse((ROOT / "tools/build_game.py").read_text(encoding="utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "GAME_SOURCES" for t in node.targets):
+            names = ast.literal_eval(node.value)
+        if (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call) and
+            isinstance(node.value.func, ast.Attribute) and node.value.func.attr == "append" and
+            isinstance(node.value.func.value, ast.Name) and node.value.func.value.id == "GAME_SOURCES"):
+            names.append(ast.literal_eval(node.value.args[0]))
+    return tuple(names)
 
 
 def main():
@@ -46,7 +108,7 @@ def main():
                         help="upstream pinned ImGui source directory (v1.91.9)")
     parser.add_argument("--compiler-rt", type=Path, help="licensed compiler-rt cpu_model source directory")
     parser.add_argument("--only", action="append", help="compile only these source basenames (repeatable)")
-    parser.add_argument("--group", choices=("host", "kernel", "runner"), default="host",
+    parser.add_argument("--group", choices=("host", "kernel", "runner", "adapters", "game"), default="host",
                         help="actual upstream target source group; no guest substitutes")
     parser.add_argument("--xbe-sha256", default="7ce12851850ab46766f77c612b251afe7c8bd81f879e11b4836bdf766be542c6",
                         help="expected USA executable metadata for runner compile; does not validate any game input")
@@ -63,13 +125,14 @@ def main():
             parser.error(f"missing input: {required}")
     out = ROOT / "private/ps5-host-objects"
     out.mkdir(parents=True, exist_ok=True)
+    merged = merged_sources()
     (out / "sc2_version.h").write_text(
         '#define SC2_VERSION ' + json.dumps((ROOT / "VERSION").read_text().strip()) + '\n#define SC2_PAL 0\n')
     common = ["--target=x86_64-sie-ps5", "-isysroot", str(sdk),
               "-DSC2_PS5=1", "-fno-stack-protector", "-femulated-tls", "-fPIC",
               "-ffp-contract=off", "-fno-strict-aliasing", "-fwrapv",
-              "-I", str(sdl / "include"), "-I", str(RUNTIME), "-I", str(out), "-I", str(imgui),
-              "-I", str(RUNTIME.parent / "xbe")]
+              "-I", str(sdl / "include"), "-I", str(merged), "-I", str(out), "-I", str(imgui),
+              "-I", str(merged.parent / "xbe")]
     if args.group == "runner":
         common.append('-DRECOMP_XBE_SHA256="' + args.xbe_sha256 + '"')
     # Include the actual inline path adapter; no fake runner or guest entrypoint.
@@ -82,9 +145,9 @@ def main():
     # Match build_game.py's game-overrides-shared merge semantics.
     imgui_sources = [imgui / name for name in ("imgui.cpp", "imgui_draw.cpp", "imgui_tables.cpp",
                     "imgui_widgets.cpp", "backends/imgui_impl_sdlgpu3.cpp")]
-    names = KERNEL_SOURCES if args.group == "kernel" else ("runner.cpp",) if args.group == "runner" else SOURCES
-    sources = [ROOT / "runtime" / name if (ROOT / "runtime" / name).is_file()
-               else RUNTIME / name for name in names]
+    names = (KERNEL_SOURCES if args.group == "kernel" else ("runner.cpp",) if args.group == "runner"
+             else ADAPTER_SOURCES if args.group == "adapters" else game_sources() if args.group == "game" else SOURCES)
+    sources = [merged / name for name in names]
     if args.group == "host":
         sources += [*imgui_sources, adapter]
     if args.compiler_rt:
@@ -119,9 +182,20 @@ def main():
         print(f"{'compiled' if done.returncode == 0 else 'FAILED'}: {source.name}", flush=True)
     receipt = ("receipt-selected.json" if args.only else
                f"receipt-{args.group}.json" if args.group != "host" else "receipt.json")
-    (out / receipt).write_text(json.dumps(dict(
+    report = dict(
         sdk=str(sdk), sdl=str(sdl), llvm=str(llvm), units=results,
-        linked=False, executed=False), indent=2) + "\n", encoding="utf-8")
+        linked=False, executed=False)
+    (out / receipt).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    if args.only:
+        # Keep the target-group manifest current after a real targeted fix;
+        # a prior failed row must not force recompiling every unchanged unit.
+        grouped = out / ("receipt.json" if args.group == "host" else f"receipt-{args.group}.json")
+        if grouped.is_file():
+            previous = json.loads(grouped.read_text(encoding="utf-8"))
+            selected = {row["source"]: row for row in previous["units"]}
+            selected.update({row["source"]: row for row in results})
+            report["units"] = list(selected.values())
+            grouped.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     return int(any(row["exit_code"] != 0 for row in results))
 
 

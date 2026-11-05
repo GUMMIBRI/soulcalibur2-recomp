@@ -47,6 +47,9 @@
 #include "input_keyboard_win32.h"
 #include "sc2_state.h"
 #include "sc2_ps5.h"
+#if defined(SC2_PS5)
+#include "sc2_fsr.h"
+#endif
 
 extern "C" {
 uint32_t recomp_d3d8_swap_counter(void);
@@ -1252,6 +1255,7 @@ int main(int argc, char **argv)
 #if defined(SC2_PS5)
         setenv("RECOMP_D3D_FULLSCREEN", settings.ps5_fullscreen ? "1" : "0", 0);
         setenv("RECOMP_D3D_WIDESCREEN", settings.ps5_widescreen ? "1" : "0", 0);
+        sc2_fsr_set_options(settings.fsr1 ? 1 : 0, settings.fsr1_sharpness);
 #endif
         shader = settings.shader;
         sc2::TrainingState().health_refill = settings.health_refill;

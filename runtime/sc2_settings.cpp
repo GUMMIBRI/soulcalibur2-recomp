@@ -61,6 +61,13 @@ const std::vector<recomp::FeatureInfo> &Features()
 {
     static const std::vector<recomp::FeatureInfo> features = {
 #if defined(SC2_PS5)
+        {"fsr1", "Graphics", "FSR1 spatial upscaling",
+            "Upscales the game picture with EASU and RCAS before drawing the menu. Does not generate frames or "
+            "change the game's internal resolution. Downscaling and unavailable resources use native presentation.",
+            0, {}},
+        {"fsr1_sharpness", "Graphics", "FSR1 sharpness",
+            "RCAS sharpening strength while FSR1 is active. Does not enable FSR1 by itself.",
+            0, {"Strong", "Balanced", "Soft"}},
         {"ps5_widescreen", "Graphics", "Aspect ratio (next start)",
             "Uses the game's native widescreen mode. Takes effect when the game is started again.",
             0, {"16:9 widescreen", "Original 4:3"}},
@@ -190,6 +197,8 @@ Settings LoadSettings(const std::string &path)
     Settings settings;
     for (size_t i = 0; i < features.size(); ++i) {
 #if defined(SC2_PS5)
+        if (features[i].name == "fsr1") settings.fsr1 = values[i] != 0;
+        if (features[i].name == "fsr1_sharpness") settings.fsr1_sharpness = values[i];
         if (features[i].name == "ps5_widescreen") settings.ps5_widescreen = values[i] == 0;
         if (features[i].name == "ps5_fullscreen") settings.ps5_fullscreen = values[i] == 0;
 #endif
