@@ -4,6 +4,23 @@ Research checkpoint: November 5, 2026. No donor game files were downloaded,
 converted or run. This report follows up CROSS-GAME-IMPORTS.md with actual
 format evidence; it does not establish a working SC3 importer.
 
+## New released-mod evidence
+
+Subsequent direct mod searches found dcooper's published
+[Astaroth SC3 2P skin for Xbox SC2](https://gamebanana.com/mods/678144), with an
+archive and DTPTool costume-replacement instructions. This is stronger evidence
+for an achievable SC3-style costume than the format-only investigation below.
+The download contents were not inspected or tested, so its listing does not
+establish whether the author converted an original SC3 mesh, recreated it, or
+used another workflow. It does not establish a new SC3 moveset or roster slot.
+The listing's reuse license must be checked before adapting/distributing it.
+
+The [Xbox SC2 mod hub](https://gamebanana.com/games/23467) also lists SC1 Taki,
+SC1 Lizardman, Broken Destiny costumes and appearances such as Midna, Nemesis
+and Squall/Leon. These are relevant ready-made appearance leads. Existing
+character categories indicate host slots; do not describe appearances as new
+authentic fighting styles without checking individual packages.
+
 SC3 PS2 is a better-supported first costume donor than a modern unrelated
 engine. More importantly, current community code already understands **both
 SC2 and SC3 texture-bank layouts**. That makes the texture-reader adaptation

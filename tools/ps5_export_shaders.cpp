@@ -40,7 +40,7 @@ void request(const std::filesystem::path &out, const std::string &source, bool v
 
 int main(int argc, char **argv)
 {
-    if (argc != 2) { std::fprintf(stderr, "usage: ps5_export_shaders PRIVATE_OUTPUT_FOLDER\n"); return 64; }
+    if (argc != 2 && !(argc == 3 && std::string(argv[2]) == "--fixed-variants")) { std::fprintf(stderr, "usage: ps5_export_shaders PRIVATE_OUTPUT_FOLDER [--fixed-variants]\n"); return 64; }
     try {
         namespace fs = std::filesystem;
         if (!fs::is_regular_file("tools/build_game.py")) throw std::runtime_error("run from the SC2 checkout root");
@@ -51,17 +51,22 @@ int main(int argc, char **argv)
         fs::create_directories(out);
         request(out, kGammaShader, true); request(out, kGammaShader, false);
         unsigned pairs = 0;
-        // Exactly the runtime's default boot set, not a replacement for dynamic
-        // vertex/pixel programs or other material variants discovered in game.
+        // Boot FVFs and optional fixed draw/count variants; guest programs
+        // and per-sample MSAA variants still require exact game requests.
         for (const auto fvf : kRecompD3dBootDrawFvfs) {
-            const RecompD3dDrawShaderKey key{fvf, 0u, nullptr, false, false, false};
-            RecompD3dVertexLayout layout{}; std::string hlsl;
-            if (!recomp_d3d_draw_shader_source(key, layout, hlsl))
-                throw std::runtime_error("a boot FVF shader is unsupported by the real generator");
-            hlsl = recomp_shader_draw_bindings(hlsl);
-            request(out, hlsl, true); request(out, hlsl, false); ++pairs;
+            const unsigned variants = argc == 3 ? 4u : 1u;
+            for (unsigned variant = 0; variant < variants; ++variant) {
+                const RecompD3dDrawShaderKey key{fvf, 0u, nullptr,
+                    false, bool(variant & 1), false};
+                RecompD3dVertexLayout layout{}; std::string hlsl;
+                if (!recomp_d3d_draw_shader_source(key, layout, hlsl))
+                    throw std::runtime_error("a fixed FVF shader is unsupported by the real generator");
+                hlsl = recomp_shader_draw_bindings(hlsl);
+                if (variant & 2) sc2PresenterCountShader(hlsl);
+                request(out, hlsl, true); request(out, hlsl, false); ++pairs;
+            }
         }
-        std::printf("exported gamma pair and %u real boot FVF pairs\n", pairs);
+        std::printf("exported gamma pair and %u real fixed FVF variant pairs\n", pairs);
         return 0;
     } catch (const std::exception &error) {
         std::fprintf(stderr, "shader export: %s\n", error.what()); return 1;

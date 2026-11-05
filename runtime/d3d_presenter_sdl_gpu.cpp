@@ -1308,11 +1308,7 @@ ShaderPair lookupShaders(RecompD3dPresenter *presenter, const RecompD3dDrawShade
     if (recomp_d3d_draw_shader_source(draw_key, pair.layout, hlsl)) {
         hlsl = recomp_shader_draw_bindings(hlsl);
         if (presenter->shader_target == RecompShaderTarget::Msl) hlsl = recomp_shader_emulate_sampler_bias(hlsl);
-        if (count_pass) {
-            static const std::string result = "    return shaded;\n";
-            const size_t at = hlsl.rfind(result);
-            if (at != std::string::npos) hlsl.replace(at, result.size(), "    return float4(1, 1, 1, 1);\n");
-        }
+        if (count_pass) sc2PresenterCountShader(hlsl);
         std::vector<std::string> defines;
         if (draw_key.sample_depth_bias) defines.push_back("RECOMP_SAMPLE_COUNT=" + std::to_string(presenter->msaa_count));
         pair.vertex = createShader(presenter, hlsl, true, defines, 0u, 2u);

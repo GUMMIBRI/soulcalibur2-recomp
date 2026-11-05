@@ -13,3 +13,13 @@ inline constexpr char kGammaShader[] =
     " float4 c = pixels.Load(int3(p.xy, 0));\n"
     " uint3 i = (uint3)(saturate(c.rgb) * 255 + 0.5);\n"
     " return float4(ramp[i.r].r, ramp[i.g].g, ramp[i.b].b, c.a); }\n";
+
+// The count pass uses the same exact source transform on host and console.
+#include <string>
+inline void sc2PresenterCountShader(std::string &source)
+{
+    static const std::string result = "    return shaded;\n";
+    const auto at = source.rfind(result);
+    if (at != std::string::npos)
+        source.replace(at, result.size(), "    return float4(1, 1, 1, 1);\n");
+}

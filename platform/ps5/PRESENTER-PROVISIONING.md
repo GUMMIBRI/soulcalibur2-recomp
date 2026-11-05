@@ -38,3 +38,27 @@ and user presets may request other shaders. An absent variant still fails with
 its exact identity and bounded private capture. No fixed-template substitution
 is made for an unsupported material. A native target compiler or further exact
 provisioning remains necessary for complete dynamic game coverage.
+
+## Fixed draw variants, November 5
+
+The exporter now accepts `--fixed-variants`. It exports the 14 actual boot
+FVFs with the renderer's scaled-depth-bias and additive count-pass variants
+(coverage_only remains false, exactly as the SDL presenter's draw call sites).
+The count-pass source transformation is shared with the runtime, preventing
+host/exporter drift. Default invocation retains the original boot-only set.
+
+```powershell
+private/presenter-export-build/ps5_export_shaders.exe private/presenter-draw-variants/requests --fixed-variants
+python tools/ps5_provision_shaders.py private/presenter-draw-variants/requests private/hd-pack/converted/soulcalibur2/shader-cache --glslang C:/.pe/ps5-native/gpu-platform-20261030/deps/glslang/bin/glslang.exe
+```
+
+All 114 exact requests compiled successfully; with three FSR payloads the
+staged cache contains 117 payloads. PS5 presenter cross-compilation passed.
+An exploratory coverage-only export exposed an upstream float3 position.w
+shader-generation defect; that path is not requested by this SDL presenter
+(coverage probes use CPU rasterization). Its exploratory payloads were removed.
+No fallback shader or generator workaround was introduced.
+
+This extends fixed-function coverage only. Guest programs, per-sample depth
+bias/MSAA, optional SMAA and user presets still require exact provisioning.
+No PS5 run or playable game claim follows from these compilation results.

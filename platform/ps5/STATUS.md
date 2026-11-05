@@ -1,5 +1,13 @@
 # PS5 homebrew port
 
+LATEST fixed variants: 114 real fixed presenter requests compiled; together
+with FSR the staged cache has117 payloads. Presenter cross-compilation passed.
+See PRESENTER-PROVISIONING.md. Owner extraction now supplies Xbox files in place,
+but both HDD-ready XBEs have additional unidentified .text-section changes
+beyond the known media patch, and neither matches supported USA/PAL hashes.
+Private inspection receipt records evidence; no disc copies or mutations made.
+No linked game or console run yet.
+
 CURRENT path/package/shader checkpoint: owner now requires saves within the
 actual eboot folder; assets remain /data/soulcalibur2 or USB/soulcalibur2.
 Implemented absolute-executable/explicit-loader metadata resolution with no
