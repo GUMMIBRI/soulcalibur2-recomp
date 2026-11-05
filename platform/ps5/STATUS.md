@@ -1,5 +1,12 @@
 # PS5 homebrew port
 
+LATEST native shader milestone: real shaderc v2025.5 static compiler built
+(268 units), bounded cache-first dynamic compilation integrated, strict host
+link succeeds with340 SDK-backed imports and no missing providers. Full runner
+link still only33 guest symbols. Authenticated guest-object/CRT payload tooling
+implemented, no positive guest build because supplied HDD-ready XBE mismatches.
+See shaderc/README.md, SHADER-PROVISIONING.md and GUEST-BUILD.md. No console run.
+
 LATEST fixed variants: 114 real fixed presenter requests compiled; together
 with FSR the staged cache has117 payloads. Presenter cross-compilation passed.
 See PRESENTER-PROVISIONING.md. Owner extraction now supplies Xbox files in place,

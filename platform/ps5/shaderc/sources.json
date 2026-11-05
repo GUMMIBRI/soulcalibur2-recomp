@@ -1,0 +1,32 @@
+{
+  "sources": [
+    {
+      "name": "shaderc",
+      "repo": "google/shaderc",
+      "revision": "bca2fa0bf0242340440d54f8d8e05c5dd2fafcea",
+      "path": ".",
+      "sha256": "4d7d6ea9aae3d9a7b17778aad9dfcd904dcc36c6a14c84af888bb62867619ac3"
+    },
+    {
+      "name": "glslang",
+      "repo": "KhronosGroup/glslang",
+      "revision": "7a47e2531cb334982b2a2dd8513dca0a3de4373d",
+      "path": "third_party/glslang",
+      "sha256": "272d2725b140e09e85b96eecdc59c2e00c1a14cda2301767e1bf3c363a44b931"
+    },
+    {
+      "name": "spirv-tools",
+      "repo": "KhronosGroup/SPIRV-Tools",
+      "revision": "262bdab48146c937467f826699a40da0fdfc0f1a",
+      "path": "third_party/spirv-tools",
+      "sha256": "8f830936b057003be77e90d37068ff6066eb87a1bab0033f8f2f5feaa966ce56"
+    },
+    {
+      "name": "spirv-headers",
+      "repo": "KhronosGroup/SPIRV-Headers",
+      "revision": "b824a462d4256d720bebb40e78b9eb8f78bbb305",
+      "path": "third_party/spirv-headers",
+      "sha256": "c693867f10a7760ef1bcf85419d51783586768cc2c601d03841bc6a8b2554b9c"
+    }
+  ]
+}

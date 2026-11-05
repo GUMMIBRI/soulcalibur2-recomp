@@ -152,6 +152,15 @@ bool compileSpirv(const std::string &hlsl, const char *entry_point, bool vertex,
 #if defined(SC2_PS5) && !defined(RECOMP_SHADERC_LINKED)
     return sc2::ShaderProvision(hlsl, entry_point, vertex, defines, glsl, spirv, error);
 #else
+#if defined(SC2_PS5)
+    // Reuse fixed provisioned binaries; compile genuinely new material source
+    // locally only when it passed the same bounded request validation.
+    bool validRequest = false;
+    if (sc2::ShaderProvision(hlsl, entry_point, vertex, defines, glsl, spirv, error,
+            false, &validRequest)) { error.clear(); return true; }
+    if (!validRequest) return false;
+    error.clear();
+#endif
     std::lock_guard<std::mutex> lock(shaderc_lock);
     if (!loadShaderc()) {
         error = "shaderc unavailable";
@@ -188,12 +197,35 @@ bool compileSpirv(const std::string &hlsl, const char *entry_point, bool vertex,
     const bool compiled = shaderc.result_status(result) == StatusSuccess;
     if (compiled) {
         const auto *bytes = reinterpret_cast<const uint8_t *>(shaderc.result_bytes(result));
+#if defined(SC2_PS5)
+        const auto length = shaderc.result_length(result);
+        if (!bytes || length < 20 || length > sc2::kShaderLimit || length % 4) {
+            shaderc.result_release(result);
+            error = "native shaderc result exceeds SPIR-V limits";
+            return false;
+        }
+        spirv.assign(bytes, bytes + length);
+#else
         spirv.assign(bytes, bytes + shaderc.result_length(result));
+#endif
     } else {
         const char *message = shaderc.result_error ? shaderc.result_error(result) : nullptr;
         error = message != nullptr ? message : "shaderc failed";
     }
     shaderc.result_release(result);
+#if defined(SC2_PS5)
+    if (compiled && !sc2::ShaderSpirvValid(spirv, entry_point, vertex)) {
+        spirv.clear();
+        error = "native shaderc returned invalid SPIR-V for the requested stage/entry";
+        return false;
+    }
+    if (!compiled) {
+        // Capture exact source for host diagnosis without replacing the native
+        // compiler's diagnostic or ever substituting a generic material.
+        std::vector<uint8_t> ignored; std::string captureError;
+        sc2::ShaderProvision(hlsl, entry_point, vertex, defines, glsl, ignored, captureError);
+    }
+#endif
     return compiled;
 #endif
 }

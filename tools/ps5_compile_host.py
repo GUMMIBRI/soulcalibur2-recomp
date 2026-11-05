@@ -107,6 +107,7 @@ def main():
     parser.add_argument("--imgui", type=Path, default=ROOT / "private/deps/imgui-1.91.9",
                         help="upstream pinned ImGui source directory (v1.91.9)")
     parser.add_argument("--compiler-rt", type=Path, help="licensed compiler-rt cpu_model source directory")
+    parser.add_argument("--shaderc-include", type=Path, help="built target shaderc public include directory")
     parser.add_argument("--only", action="append", help="compile only these source basenames (repeatable)")
     parser.add_argument("--group", choices=("host", "kernel", "runner", "adapters", "game"), default="host",
                         help="actual upstream target source group; no guest substitutes")
@@ -135,6 +136,10 @@ def main():
               "-I", str(merged.parent / "xbe")]
     if args.group == "runner":
         common.append('-DRECOMP_XBE_SHA256="' + args.xbe_sha256 + '"')
+    if args.shaderc_include:
+        if not (args.shaderc_include / "shaderc/shaderc.h").is_file():
+            parser.error("--shaderc-include must contain shaderc/shaderc.h")
+        common += ["-DRECOMP_SHADERC_LINKED=1", "-I", str(args.shaderc_include.resolve())]
     # Include the actual inline path adapter; no fake runner or guest entrypoint.
     adapter = out / "sc2_ps5_paths.cpp"
     adapter.write_text('#include "sc2_ps5.h"\n'

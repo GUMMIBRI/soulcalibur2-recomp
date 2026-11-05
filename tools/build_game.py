@@ -41,7 +41,10 @@ if PAL:
     sys.path.insert(0, str(ROOT / "tools/sc2"))
     import pal_port
 PROGRAM = PRIVATE / ("program-pal" if PAL else "program")
-XBE = PRIVATE / ("disc-pal/Default.xbe" if PAL else "disc/Default.xbe")
+# The owner may keep an extracted disc elsewhere in this checkout. Read the
+# executable in place; this changes location only, never supported identity.
+XBE = Path(os.environ.get("SC2_XBE_PATH", str(PRIVATE / (
+    "disc-pal/Default.xbe" if PAL else "disc/Default.xbe")))).resolve()
 XBE_SHA256 = pal_port.PAL_XBE_SHA256 if PAL else "7ce12851850ab46766f77c612b251afe7c8bd81f879e11b4836bdf766be542c6"
 SEEDS = ROOT / ("tools/sc2/seed_functions_pal.json" if PAL else "tools/sc2/seed_functions.json")
 BUILD = "build/%s-pal" if PAL else "build/%s"
@@ -54,7 +57,9 @@ def runtime_own():
     if PAL and RUNTIME_OWN == ROOT / "runtime":
         RUNTIME_OWN = pal_port.write_runtime(ROOT / (BUILD % "runtime"))
     return RUNTIME_OWN
-PYTHON = PRIVATE / "venv/bin/python"
+_venv_python = PRIVATE / ("venv/Scripts/python.exe" if os.name == "nt" else "venv/bin/python")
+PYTHON = Path(os.environ.get("SC2_PYTHON", str(
+    _venv_python if _venv_python.is_file() else Path(sys.executable)))).resolve()
 # runtime/ files with no shared counterpart, built into the runner.
 GAME_SOURCES = ["sc2_hooks.c", "sc2_settings.cpp", "sc2_input.cpp", "sc2_menu.cpp", "sc2_training.cpp", "sc2_guest.cpp", "sc2_netplay.cpp", "sc2_state.cpp", "sc2_frame.cpp", "sc2_wm_select.c", "sc2_android.cpp", "sc2_touch.cpp", "x87_math/sin.c", "x87_math/cos.c", "x87_math/__sin.c", "x87_math/__cos.c", "x87_math/__rem_pio2.c", "x87_math/__rem_pio2_large.c", "x87_math/atan.c", "x87_math/atan2.c", "x87_math/log2.c", "x87_math/log2_data.c", "x87_math/expm1.c", "../recomp-common/launcher/src/online.cpp", "../recomp-common/launcher/src/run_program.cpp", "../recomp-common/menu.cpp", "../recomp-common/settings.cpp"]
 
@@ -121,8 +126,16 @@ def manual_list():
 
 
 def lift():
+    if not XBE.is_file():
+        sys.exit("Missing owned executable: %s (SC2_XBE_PATH selects an existing extraction)" % XBE)
     if sha256(XBE) != XBE_SHA256:
         sys.exit("%s is not the supported Soulcalibur II %s executable" % (XBE, "(Europe, Australia)" if PAL else "(USA)"))
+    # Reject unsupported inputs before making outputs or invoking the lifter.
+    if not PYTHON.is_file():
+        sys.exit("SC2_PYTHON must name an existing Python interpreter with capstone installed")
+    if not (LIFTER / "tools/recomp/__main__.py").is_file():
+        sys.exit("Initialize the pinned tools/xboxrecomp submodule first")
+    PROGRAM.mkdir(parents=True, exist_ok=True)
     logs = PRIVATE / ("logs-pal" if PAL else "logs")
     seeds = SEEDS
     run([PYTHON, "-u", "-m", "tools.xbe_parser", XBE, "--json", PROGRAM / "analysis.json"],
@@ -144,7 +157,7 @@ def lift():
     manifest, ebp = program_manifest(PROGRAM / "generated")
     revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=LIFTER, text=True).strip()
     (PROGRAM / "receipt.json").write_text(json.dumps(dict(
-        xbe_sha256=XBE_SHA256, lifter_commit=revision, manifest_sha256=manifest, ebp_count=ebp,
+        xbe_sha256=XBE_SHA256, xbe_path=str(XBE), lifter_commit=revision, manifest_sha256=manifest, ebp_count=ebp,
         manual_sha256=manual_sha256), indent=2) + "\n")
     print("lifted: manifest %s, uninitialized EBP prologues %d" % (manifest[:12], ebp))
 

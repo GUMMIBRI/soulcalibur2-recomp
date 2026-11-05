@@ -54,3 +54,13 @@ the player downloaded themselves.
 Soulcalibur is a trademark of Bandai Namco Entertainment; Link and The Legend of Zelda of Nintendo; Heihachi Mishima
 and Tekken of Bandai Namco Entertainment; Spawn of Todd McFarlane Productions. They are used only to say what this
 program works with. This project is not affiliated with or endorsed by any of them.
+
+## Optional PS5 native shader compiler
+
+PS5 builds can statically link Google shaderc v2025.5 and its pinned glslang,
+SPIRV-Tools and SPIRV-Headers dependencies. Exact source revisions and official
+archive SHA-256 values are in platform/ps5/shaderc/sources.json. The complete
+upstream license files (Apache-2.0 and the glslang notices) are preserved in
+platform/ps5/shaderc/DEPENDENCY-LICENSES.txt. Sources/libraries are built locally
+under ignored private/; no proprietary shader compiler is used. See that
+folder's README.md for build provenance and integration limits.

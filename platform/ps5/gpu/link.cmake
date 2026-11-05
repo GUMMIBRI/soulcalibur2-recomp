@@ -72,5 +72,15 @@ function(sc2_ps5_link_gpu target)
     # RADV's address swizzler uses __cpu_model. Compile the actual licensed
     # compiler-rt CPU dispatch implementation instead of inventing a model.
     target_sources("${target}" PRIVATE "${SC2_PS5_COMPILER_RT_DIR}/x86.c")
+    if(SC2_PS5_SHADERC_LIBRARY OR SC2_PS5_SHADERC_INCLUDE)
+        if(NOT EXISTS "${SC2_PS5_SHADERC_LIBRARY}" OR
+           NOT EXISTS "${SC2_PS5_SHADERC_INCLUDE}/shaderc/shaderc.h")
+            message(FATAL_ERROR "Set both SC2_PS5_SHADERC_LIBRARY and SC2_PS5_SHADERC_INCLUDE to the real target build")
+        endif()
+        # Shader compilation lives in the presenter library, not the runner TU.
+        target_compile_definitions(recomp_d3d_presenter PRIVATE RECOMP_SHADERC_LINKED=1)
+        target_include_directories(recomp_d3d_presenter PRIVATE "${SC2_PS5_SHADERC_INCLUDE}")
+        target_link_libraries("${target}" PRIVATE "${SC2_PS5_SHADERC_LIBRARY}")
+    endif()
     target_link_libraries("${target}" PRIVATE sc2_ps5_gpu)
 endfunction()

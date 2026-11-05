@@ -1,3 +1,27 @@
+# Native dynamic compilation update
+
+A real public shaderc v2025.5 static compiler now cross-builds for PS5 and links
+into the actual host module. See shaderc/README.md, locked sources/licenses and
+private/ps5-shaderc/receipt.json. With RECOMP_SHADERC_LINKED, the runtime first
+tries the validated fixed provision cache, then compiles a bounded new request
+locally. Native results must fit the same4MiB limit and pass stage/entry SPIR-V
+validation. Failed compilations retain actual diagnostics and bounded exact
+request capture; no substitute shader is used. The desktop cache is never
+written by this PS5 branch. Builds without the static compiler retain the
+provision-only route described below.
+
+The new compiler and cache-first runtime cross-compile; strict host linkage
+succeeds with340 imports all backed by SDK providers. A full runner link using
+the native compiler still fails only on33 original generated guest symbols.
+No target compilation has run on the console; startup memory, compile latency
+and actual material/image correctness remain human-test work.
+
+Compile with tools/ps5_compile_host.py --shaderc-include pointing to the built
+public include directory, then tools/ps5_link_gpu.py --shaderc-library pointing
+to the target combined archive. CMake integration accepts the paired
+SC2_PS5_SHADERC_INCLUDE and SC2_PS5_SHADERC_LIBRARY paths. These must both refer
+to real target build inputs; the host glslang executable is not a target library.
+
 # PS5 shader provisioning
 
 The PS5 build can read precompiled SPIR-V without a target shaderc library.

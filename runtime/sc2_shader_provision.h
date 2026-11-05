@@ -120,8 +120,10 @@ inline void ShaderCaptureRequest(const std::string &key, const std::vector<uint8
 }
 
 inline bool ShaderProvision(const std::string &source, const char *entry, bool vertex,
-    const std::vector<std::string> &defines, bool glsl, std::vector<uint8_t> &code, std::string &error)
+    const std::vector<std::string> &defines, bool glsl, std::vector<uint8_t> &code, std::string &error,
+    bool captureMiss = true, bool *requestValid = nullptr)
 {
+    if (requestValid) *requestValid = false;
     code.clear();
     if (!entry || !*entry || std::strlen(entry) > 256 || source.size() > 2u * 1024u * 1024u ||
         defines.size() > 128) { error = "shader request exceeds provisioning limits"; return false; }
@@ -137,6 +139,7 @@ inline bool ShaderProvision(const std::string &source, const char *entry, bool v
     // offsets and location mapping. Change magic/version when policy changes.
     ShaderText(request, source);
     const std::string key = doaxbv::sha256Hex(request);
+    if (requestValid) *requestValid = true;
     for (const auto &root : PS5ContentRoots()) {
         std::ifstream file(root / "shader-cache" / (key + ".spv"), std::ios::binary);
         if (!file) continue;
@@ -151,7 +154,7 @@ inline bool ShaderProvision(const std::string &source, const char *entry, bool v
         if (file && ShaderSpirvValid(code, entry, vertex)) return true;
         code.clear();
     }
-    ShaderCaptureRequest(key, request);
+    if (captureMiss) ShaderCaptureRequest(key, request);
     error = "missing or invalid provisioned SPIR-V " + key +
         "; compile the private shader-requests with tools/ps5_provision_shaders.py";
     return false;
