@@ -8,6 +8,10 @@
   menus), drawn while **HD textures** is on (it also switches in the in-game menu, while playing). **Dump textures**
   writes each texture the game draws to a folder, for making your own pack.
 
+- **No more freeze in the Museum on a new save**: with the guest characters loaded, Mode Select showed Museum
+  before anything in it was unlocked, and pressing Down in its empty menu froze the game. The Museum now shows once
+  something in it is unlocked, as on the Xbox.
+
 ## 0.2.2-beta.1
 
 A fix for the game closing with "The game stopped with code 2" as a fight loads, and clearer messages when the game
