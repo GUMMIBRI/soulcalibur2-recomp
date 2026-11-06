@@ -74,6 +74,34 @@ def application_crt(sdk, llvm):
     return obj
 
 
+def application_radv(source, llvm):
+    """Retain weak dispatch providers, replacing only the existing memstream ABI."""
+    source = source.resolve()
+    if digest(source) != "39921c4e1c19fecc5c7914e022cd10be01e0325ca990cc027960a1777cf85b96":
+        raise ValueError("RADV archive differs from the reviewed PS5 release")
+    ar = llvm.resolve() / ("llvm-ar.exe" if sys.platform == "win32" else "llvm-ar")
+    before_result = run([ar, "t", source])
+    before_result.check_returncode()
+    before = before_result.stdout.splitlines()
+    removed = "memstream.c.o"
+    if before.count(removed) != 1:
+        raise ValueError("RADV requires exactly one original memstream member")
+    out = ROOT / "private/ps5-application-radv"
+    out.mkdir(parents=True, exist_ok=True)
+    derived, receipt = out / "radv-game.a", out / "archive-transform.json"
+    shutil.copyfile(source, derived)
+    result = run([ar, "d", derived, removed])
+    result.check_returncode()
+    after = run([ar, "t", derived]); after.check_returncode()
+    if after.stdout.splitlines() != [name for name in before if name != removed]:
+        raise ValueError("RADV member transformation mismatch")
+    record = dict(schema="sc2.ps5-radv-whole-archive.v1", source=str(source),
+                  source_sha256=digest(source), derived=str(derived), derived_sha256=digest(derived),
+                  removed_members=[removed], replacement="runtime/sc2_memstream.cpp",
+                  ar=str(ar), ar_sha256=digest(ar), whole_archive=True)
+    receipt.write_text(json.dumps(record, indent=2) + "\n")
+    return derived, [source, receipt], record
+
 def application_libc(sdk, llvm):
     """Derive one private application archive; never modify the public SDK."""
     source = sdk.resolve() / "target/lib/libc.a"
@@ -228,6 +256,9 @@ def main():
             parser.error("SC2 PS5 SDL GPU header differs from the reviewed archive ABI")
 
     radv = args.radv / "lib/libvulkan_radeon.ps5.a"
+    radv_inputs, radv_transform = [], None
+    if args.application:
+        radv, radv_inputs, radv_transform = application_radv(radv, args.llvm)
     sdk_lib = args.sdk.resolve() / "target/lib"
     archives = [sdk_lib / name for name in (
         "libc++.a", "libc++abi.a", "libunwind.a", "libpthread.a", "libc.a")]
@@ -397,10 +428,11 @@ def main():
     linked = out / ("sc2-app.elf" if args.application else "eboot.elf" if args.payload else "sc2-runner.so" if args.full_runner and args.strict_shared else
                     "sc2-gpu-host.so" if args.strict_shared else "sc2-gpu-platform.o")
     linked.unlink(missing_ok=True)
+    radv_link = ["--whole-archive", radv, "--no-whole-archive"] if args.application else [radv]
     command = [linker, "-L", sdk_lib, "--wrap=fflush", "--wrap=fclose",
                *( ["-pie", "--no-undefined", "-e", "sc2_ps5_start" if args.application else "_start", "-z", "max-page-size=0x4000", "--hash-style=gnu"] if executable_mode else
                   ["-shared", "--no-undefined"] if args.strict_shared else ["-r"] ),
-               "--start-group", *units, sdl, radv, *archives,
+               "--start-group", *units, sdl, *radv_link, *archives,
                "--end-group", "-o", linked]
     if args.full_runner:
         command.append("--error-limit=0")
@@ -441,6 +473,13 @@ def main():
                 executable_elf(linked)
         except (ValueError, OSError, subprocess.SubprocessError) as error:
             shape_error = str(error)
+    required_vulkan_providers = ["vk_common_GetPhysicalDeviceProperties2"]
+    if args.application and done.returncode == 0 and shape_error is None:
+        defined = run([nm, "--defined-only", "--just-symbol-name", linked])
+        found = set(defined.stdout.splitlines())
+        missing_vulkan = [name for name in required_vulkan_providers if name not in found]
+        if defined.returncode or missing_vulkan:
+            shape_error = "RADV required callable providers omitted: " + ", ".join(missing_vulkan)
     link_success = done.returncode == 0 and shape_error is None
     log_name = "application-link.log" if args.application else "payload-link.log" if args.payload else "strict-runner-link.log" if args.full_runner and args.strict_shared else "strict-link.log" if args.strict_shared else "link.log"
     (out / log_name).write_text(done.stdout + done.stderr + ("\nApplication/ELF preflight failed: " + shape_error if shape_error else ""), encoding="utf-8")
@@ -470,7 +509,7 @@ def main():
                                     for row in object_records],
                    unresolved_link_errors=re.findall(r"undefined symbol: ([^\r\n]+)", done.stderr),
                    inputs=[dict(path=str(x.resolve()), sha256=digest(x))
-                           for x in [*units, sdl, radv, *archives, *imports, *crt_inputs, *app_inputs]],
+                           for x in [*units, sdl, radv, *radv_inputs, *archives, *imports, *crt_inputs, *app_inputs]],
                    sdk=str(args.sdk.resolve()),
                    platform_library=str(args.platform_library.resolve()) if args.platform_library else None,
                    relocatable_link_succeeded=link_success and not args.strict_shared and not executable_mode,
@@ -478,6 +517,9 @@ def main():
                    fully_linked=executable_mode and link_success and not remaining,
                    title_heap=title_heap_transform,
                    application_abort_wrap=abort_wrap,
+                   radv_whole_archive=args.application,
+                   application_radv_transform=radv_transform,
+                   required_vulkan_providers=required_vulkan_providers,
                    application_abi="sc2.ps5-application.v1" if args.application else None,
                    application_libc_transform=libc_transform,
                    application_entry="sc2_ps5_start" if args.application else None,

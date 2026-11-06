@@ -14,5 +14,8 @@
     "pthread_detach"
   ],
   "thread_abi": "Game/provider pthread.h identical SHA256 b8c84af542d20ed52124d7aa7df65a3b0c50ce8030dc5f54af0465115750fa18; opaque thread/attr pointer typedefs",
-  "reference": "Special thanks to the Parasite Eve PC port team."
+  "reference": "Special thanks to the Parasite Eve PC port team.",
+  "radv_link_policy": "Application whole-archive of private derivative, removing exactly memstream.c.o replaced by SC2 ABI",
+  "radv_release_archive_sha256": "39921c4e1c19fecc5c7914e022cd10be01e0325ca990cc027960a1777cf85b96",
+  "required_defined_provider": "vk_common_GetPhysicalDeviceProperties2"
 }
