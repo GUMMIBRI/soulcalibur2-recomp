@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -70,6 +71,58 @@ def application_crt(sdk, llvm):
     if row["exit_code"] or not row["object"]:
         raise ValueError("application CRT compile failed; see " + row["log"])
     return obj
+
+
+def application_libc(sdk, llvm):
+    """Derive one private application archive; never modify the public SDK."""
+    source = sdk.resolve() / "target/lib/libc.a"
+    ar = llvm.resolve() / ("llvm-ar.exe" if sys.platform == "win32" else "llvm-ar")
+    removed = ["mman.o", "syscalls.o"]
+    original_hash, tool_hash = digest(source), digest(ar)
+    def members(path):
+        result = run([ar, "t", path])
+        if result.returncode:
+            raise ValueError("cannot inventory application libc: " + result.stderr)
+        return result.stdout.splitlines()
+    before = members(source)
+    if any(before.count(name) != 1 for name in removed):
+        raise ValueError("application libc must contain exactly one mman.o and syscalls.o")
+    expected = [name for name in before if name not in removed]
+    out = ROOT / "private/ps5-application-libc"
+    out.mkdir(parents=True, exist_ok=True)
+    derived, receipt_path = out / "libc.a", out / "archive-transform.json"
+    try:
+        previous = json.loads(receipt_path.read_text(encoding="utf-8"))
+        if (previous.get("source_sha256") == original_hash and previous.get("ar_sha256") == tool_hash and
+                previous.get("removed_members") == removed and previous.get("derived_sha256") == digest(derived) and
+                members(derived) == expected):
+            return derived, [source, receipt_path], previous
+    except (ValueError, OSError, KeyError, TypeError):
+        pass
+    pending = out / "libc.a.pending"
+    pending.unlink(missing_ok=True)
+    command = [str(ar), "d", str(pending), *removed]
+    try:
+        shutil.copyfile(source, pending)
+        result = run(command)
+        if result.returncode or members(pending) != expected:
+            raise ValueError("application libc exact-member filter failed: " + result.stderr)
+        if digest(source) != original_hash or digest(ar) != tool_hash:
+            raise ValueError("SDK libc/archive tool changed during transformation")
+        pending.replace(derived)
+        record = dict(schema="sc2.ps5-application-libc.v1", source=str(source), source_sha256=original_hash,
+                      derived=str(derived), derived_sha256=digest(derived), removed_members=removed,
+                      ar=str(ar), ar_sha256=tool_hash, command=command,
+                      original_member_count=len(before), derived_member_count=len(expected),
+                      limitations=["AT wrappers support absolute paths or AT_FDCWD, not dirfd-relative paths",
+                                   "mutations stay in compiled install root or /app0; relative writes anchor to compiled root",
+                                   "fchmodat nofollow unsupported", "fork/readlink/futimens/utimensat return ENOSYS",
+                                   "posix_fallocate returns ENOTSUP without changing errno",
+                                   "pathconf opens the path readonly and may require read permission"], executed=False)
+        receipt_path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+        return derived, [source, receipt_path], record
+    finally:
+        pending.unlink(missing_ok=True)
 
 
 def main():
@@ -172,15 +225,19 @@ def main():
         except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError) as error:
             parser.error(str(error))
     app_inputs = []
+    libc_transform = None
     if args.application:
         try:
             units.append(application_crt(args.sdk, args.llvm))
             units.append(ROOT / "private/ps5-host-objects/sc2_ps5_startup.o")
+            units.append(ROOT / "private/ps5-host-objects/sc2_ps5_posix.o")
+            derived_libc, transform_inputs, libc_transform = application_libc(args.sdk, args.llvm)
+            archives = [derived_libc if path == sdk_lib / "libc.a" else path for path in archives]
         except (ValueError, OSError) as error:
             parser.error(str(error))
         app_inputs = [ROOT / ("platform/ps5/app/" + name) for name in
                       ("app_crt.cpp", "ps5-pie.ld", "ps5-pie-unwind.ld", "app-symbols.map", "SOURCE.json")]
-        app_inputs.append(ROOT / "runtime/sc2_ps5_startup.c")
+        app_inputs.extend([ROOT / "runtime/sc2_ps5_startup.c", ROOT / "runtime/sc2_ps5_posix.c", *transform_inputs])
     units = list(dict.fromkeys(path.resolve() for path in units))
     # Every selected object, including renderer/kernel and --extra-object inputs,
     # must have the dependency-tracked receipt produced by the actual compiler.
@@ -197,7 +254,9 @@ def main():
                 raise ValueError(f"object is not compiled for the selected PS5 target: {obj}")
             if Path(row["compiler"]).resolve().parent != args.llvm.resolve():
                 raise ValueError(f"object was compiled with another LLVM installation: {obj}")
-            if args.application and obj.stem in ("runner", "sc2_ps5_startup"):
+            if args.application and obj.stem == "sc2_ps5_posix" and "-DSC2_PS5_APPLICATION=1" not in row["command"]:
+                raise ValueError("application POSIX adapter must be compiled with --group posix")
+            if args.application and obj.stem in ("runner", "sc2_ps5_startup", "sc2_ps5_posix"):
                 root_define = "-DSC2_PS5_INSTALL_ROOT=" + json.dumps(args.eboot_dir)
                 if root_define not in row["command"]:
                     raise ValueError("runner/startup must be compiled with the same explicit --eboot-dir as this application")
@@ -316,6 +375,7 @@ def main():
                    strict_shared_link_succeeded=link_success and args.strict_shared,
                    fully_linked=executable_mode and link_success and not remaining,
                    application_abi="sc2.ps5-application.v1" if args.application else None,
+                   application_libc_transform=libc_transform,
                    application_entry="sc2_ps5_start" if args.application else None,
                    startup_log=(args.eboot_dir + "/startup.log") if args.application else None,
                    output=dict(path=str(linked.resolve()), sha256=digest(linked), bytes=linked.stat().st_size) if link_success else None,

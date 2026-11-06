@@ -256,7 +256,7 @@ def main():
     parser.add_argument("--opt-level", choices=("0", "1", "2", "3", "s"), default="2",
                         help="production optimization level; changing it invalidates incremental objects")
     parser.add_argument("--only", action="append", help="compile only these source basenames (repeatable)")
-    parser.add_argument("--group", choices=("host", "kernel", "runner", "adapters", "game", "startup"), default="host",
+    parser.add_argument("--group", choices=("host", "kernel", "runner", "adapters", "game", "startup", "posix"), default="host",
                         help="actual upstream target source group; no guest substitutes")
     parser.add_argument("--eboot-dir", help="explicit PS5 test-install directory embedded in runner startup")
     parser.add_argument("--xbe-sha256", default="7ce12851850ab46766f77c612b251afe7c8bd81f879e11b4836bdf766be542c6",
@@ -264,8 +264,8 @@ def main():
     args = parser.parse_args()
     if len(args.xbe_sha256) != 64 or any(c not in "0123456789abcdef" for c in args.xbe_sha256):
         parser.error("expected XBE SHA-256 must be 64 lowercase hexadecimal digits")
-    if args.group == "startup" and not args.eboot_dir:
-        parser.error("--group startup requires --eboot-dir for its fixed pre-CRT log path")
+    if args.group in ("startup", "posix") and not args.eboot_dir:
+        parser.error("--group startup/posix requires --eboot-dir for its fixed application root")
     if args.eboot_dir:
         try:
             validate_install_root(args.eboot_dir)
@@ -292,8 +292,10 @@ def main():
               "-I", str(merged.parent / "xbe")]
     if args.group == "runner":
         common.append('-DRECOMP_XBE_SHA256="' + args.xbe_sha256 + '"')
-    if args.group in ("runner", "startup") and args.eboot_dir:
+    if args.group in ("runner", "startup", "posix") and args.eboot_dir:
         common.append("-DSC2_PS5_INSTALL_ROOT=" + json.dumps(args.eboot_dir))
+    if args.group == "posix":
+        common.append("-DSC2_PS5_APPLICATION=1")
     if args.group == "startup":
         # Prevent compiler-generated strlen/memcpy helpers before libc exists.
         common += ["-ffreestanding", "-fno-builtin"]
@@ -313,6 +315,7 @@ def main():
                     "imgui_widgets.cpp", "backends/imgui_impl_sdlgpu3.cpp")]
     names = (KERNEL_SOURCES if args.group == "kernel" else ("runner.cpp",) if args.group == "runner"
              else ("sc2_ps5_startup.c",) if args.group == "startup" else
+             ("sc2_ps5_posix.c",) if args.group == "posix" else
              ADAPTER_SOURCES if args.group == "adapters" else game_sources() if args.group == "game" else SOURCES)
     sources = [merged / name for name in names]
     if args.group == "host":

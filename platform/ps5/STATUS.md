@@ -1,5 +1,14 @@
 # PS5 homebrew port
 
+Latest logging test reached entry/constructors/main, then0xa002030a
+SYSTEM_ILLEGAL_FUNCTION_CALL. A relative-argv pathconf raw-syscall route was
+identified statically; actual crash PC/argv remain unknown. The new app uses
+explicit install identity, bounded native file adapters and kernel memory
+imports. Full link359 SDK providers; final decoded audit found zero direct
+syscalls across10,657,034 instructions. SELF integrity passed and the owner-
+authorized USB eboot replacement was SHA readback verified. See APPLICATION-POSIX.md
+and private/illegal-function-error/SYSCALL-FIX-UPLOAD.json. Human retest pending.
+
 Latest human launch: icon/registration reached, then0xa0020102
 PRX_SCE_MODULE_LOAD_ERROR. A missing source-built public loader companion was
 identified by comparison with the working PE native recipe. A new test eboot

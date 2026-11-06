@@ -1002,6 +1002,16 @@ static bool sampleInput(std::uint32_t port, RecompInputGamepad *gamepad)
 int main(int argc, char **argv)
 {
     SC2_PS5_STAGE("runner:main-enter");
+#if defined(SC2_PS5)
+    SC2_PS5_STAGE(argc > 0 ? "runner:argc-positive" : argc == 0 ? "runner:argc-zero" : "runner:argc-negative");
+    SC2_PS5_STAGE(argv ? "runner:argv-present" : "runner:argv-null");
+    if (argc > 0 && argv && argv[0]) {
+        // The stage sink bounds raw text to512 bytes and performs no allocation.
+        SC2_PS5_STAGE("runner:raw-argv0-begin");
+        SC2_PS5_STAGE(argv[0]);
+        SC2_PS5_STAGE("runner:raw-argv0-end");
+    } else SC2_PS5_STAGE("runner:argv0-unavailable");
+#endif
 #ifdef __ANDROID__
     sc2_android_start();
 #endif
@@ -1028,6 +1038,43 @@ int main(int argc, char **argv)
         }
     }
 #endif
+    SC2_PS5_STAGE("runner:initial-argv-begin");
+#if defined(SC2_PS5)
+    {
+        // Application loaders may expose a virtual /app0 path, a bare filename,
+        // or no argv0. These are not a physical install identity, and resolving
+        // them with absolute() would ask the loader's unrelated CWD.
+        const char *retained = std::getenv("SC2_PS5_EBOOT_DIR");
+        if (retained && *retained) {
+            SC2_PS5_STAGE("runner:initial-root-explicit");
+            const auto root = std::filesystem::u8path(retained);
+            if (root.is_absolute() && sc2::PS5WritablePath(root))
+                runnerPath = (root / "eboot.bin").u8string();
+        } else {
+            if (argc > 0 && argv && argv[0]) {
+                SC2_PS5_STAGE("runner:initial-argv0-inspect");
+                const auto supplied = std::filesystem::u8path(argv[0]);
+                if (supplied.is_absolute() && supplied.has_filename() &&
+                    sc2::PS5WritablePath(supplied.parent_path())) {
+                    runnerPath = supplied.u8string();
+                    SC2_PS5_STAGE("runner:initial-physical-executable");
+                }
+            }
+#if defined(SC2_PS5_INSTALL_ROOT)
+            if (runnerPath.empty()) {
+                SC2_PS5_STAGE("runner:initial-root-compiled");
+                const auto root = std::filesystem::u8path(SC2_PS5_INSTALL_ROOT);
+                if (root.is_absolute() && sc2::PS5WritablePath(root)) {
+                    runnerPath = (root / "eboot.bin").u8string();
+                    setenv("SC2_PS5_EBOOT_DIR", SC2_PS5_INSTALL_ROOT, 0);
+                }
+            }
+#endif
+        }
+        if (runnerPath.empty()) SC2_PS5_STAGE("runner:initial-executable-unresolved");
+        if (argc > 0 && argv) runnerArgs.assign(argv + 1, argv + argc);
+    }
+#else
     {
         std::error_code ignored;
         if (argc > 0 && argv && argv[0]) {
@@ -1035,14 +1082,21 @@ int main(int argc, char **argv)
             runnerArgs.assign(argv + 1, argv + argc);
         }
     }
+#endif
+    SC2_PS5_STAGE("runner:initial-argv-ready");
+    SC2_PS5_STAGE("runner:host-diagnostics-begin");
     recomp_install_host_diagnostics();
+    SC2_PS5_STAGE("runner:host-diagnostics-ready");
     recomp_d3d_frame_breakdown = recomp_kernel_thread_times;
+    SC2_PS5_STAGE("runner:argument-state-begin");
     std::string xbePath, discRoot, expectStop, milestoneLog, settingsPath, storageRoot, discImage, menuShot;
     std::vector<std::string> discFiles;
     std::string guestLink, guestHeihachi, guests;
     sc2::Netplay::Settings netSettings;
     bool netWanted = false;
+    SC2_PS5_STAGE("runner:input-pulses-begin");
     recomp_input_pulse_source_init(&inputPulses, recomp_input_host_sample, 0u);
+    SC2_PS5_STAGE("runner:arguments-begin");
     for (int i = 1; i < argc; ++i) {
         const std::string argument = argv[i];
         if (argument == "--input-script-only") {
@@ -1225,11 +1279,11 @@ int main(int argc, char **argv)
         else if (argument == "--expect-stop") expectStop = value;
         else milestoneLog = value;
     }
+    SC2_PS5_STAGE("runner:arguments-ready");
 #if defined(SC2_PS5)
     {
         std::string error;
-        const std::string executable = argc > 0 && argv && argv[0] &&
-            std::filesystem::path(argv[0]).is_absolute() ? argv[0] : "";
+        const std::string executable = runnerPath;
 #if defined(SC2_PS5_INSTALL_ROOT)
         // The build/transfer operator selected this exact install folder. It
         // is explicit metadata for argc-zero application loaders, not CWD.
@@ -1256,6 +1310,10 @@ int main(int argc, char **argv)
         setenv("RECOMP_SCREENSHOT_DIR", screenshots.string().c_str(), 1);
         const auto streams = std::filesystem::path(settingsPath).parent_path() / ".mesa-streams";
         setenv("SC2_PS5_STREAM_DIR", streams.string().c_str(), 1);
+        const auto driverCache = std::filesystem::path(settingsPath).parent_path() / "driver-cache";
+        setenv("MESA_SHADER_CACHE_DIR", driverCache.string().c_str(), 1);
+        const auto libraryCache = std::filesystem::path(settingsPath).parent_path() / "cache";
+        setenv("XDG_CACHE_HOME", libraryCache.string().c_str(), 1);
     }
 #endif
     if (xbePath.empty() == discImage.empty()) {

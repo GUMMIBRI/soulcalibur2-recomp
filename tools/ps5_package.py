@@ -153,6 +153,11 @@ def finalized_app(receipt_path, selected=None):
     if not value.get("retained_sections") or any(item.get("preserved") is not True for item in value["retained_sections"]):
         raise ValueError("finalization lacks retained application section evidence")
     original = checked_record(value["input"])
+    audit = value.get('syscall_audit', {})
+    if (audit.get('schema') != 'sc2.ps5-decoded-syscalls.v1' or audit.get('passed') is not True or
+            audit.get('count') != 0 or audit.get('decoded_syscalls') != [] or
+            audit.get('elf_sha256') != digest(original) or not audit.get('decoded_instructions')):
+        raise ValueError('finalization needs a matching successful decoded application syscall audit')
     checked_record(value["output"], plain_path(receipt_path.parent / "eboot.elf"))
     executable_elf(original)
     link_path = checked_record(value["link_receipt"])

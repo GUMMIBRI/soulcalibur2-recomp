@@ -229,6 +229,11 @@ def main():
         if not stubdir.is_dir() or not nm.is_file():
             raise ValueError('existing public SDK import directory and LLVM nm required')
         original = preflight(elf, nm)
+        from ps5_audit_syscalls import audit_syscalls
+        decoder = llvm / ('llvm-objdump.exe' if __import__('os').name == 'nt' else 'llvm-objdump')
+        syscall_audit = audit_syscalls(elf, decoder)
+        if syscall_audit['count']:
+            raise ValueError('application contains direct syscall instructions; use native application services')
         metadata = []
         if args.metadata:
             folder = plain(args.metadata)
@@ -285,6 +290,7 @@ def main():
                       output=record(converted), self=record(self_file), retained_sections=sections, commands=commands,
                       metadata_supplied=bool(args.metadata), metadata=[dict(path=str(r), source=record(p)) for p, r in metadata],
                       loader_companion=record(out / 'sce_module/libc.prx'),
+                      syscall_audit=syscall_audit,
                       application_linked=True, console_executed=False, installed=False, gameplay_verified=False)
         (out / 'FINALIZATION.json').write_text(json.dumps(result, indent=2) + '\n')
         print('Converted application ELF/development SELF locally; no installation or target execution.')
