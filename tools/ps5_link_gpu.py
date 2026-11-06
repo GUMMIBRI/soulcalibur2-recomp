@@ -239,6 +239,9 @@ def main():
     if args.kernel or args.full_runner:
         units += [ROOT / f"private/ps5-host-objects/{name}.o" for name in KERNEL_OBJECTS]
     if args.full_runner:
+        if not args.application or not args.title_heap:
+            parser.error("native save enumeration requires application --title-heap provider")
+        units.append(ROOT / "private/ps5-host-objects/sc2_native_directory.o")
         for group in ("runner", "adapters", "game"):
             manifest = ROOT / f"private/ps5-host-objects/receipt-{group}.json"
             if not manifest.is_file():
@@ -316,6 +319,9 @@ def main():
         for obj in units:
             row = json.loads(obj.with_suffix(".object.json").read_text(encoding="utf-8"))
             validate_object(row, args.sdk, validated_dependencies=verified_dependencies)
+            if obj.stem == "sc2_native_directory":
+                from ps5_compile_directory import validate_bridge
+                validate_bridge(row, args.llvm)
             if Path(row["object"]).resolve() != obj:
                 raise ValueError(f"object receipt selects another file: {obj}")
             if not {"--target=x86_64-sie-ps5", "-DSC2_PS5=1"}.issubset(row["command"]):

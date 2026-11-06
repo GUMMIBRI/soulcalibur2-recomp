@@ -27,6 +27,9 @@
 #if defined(SC2_PS5)
 #include "sc2_ps5.h"
 extern "C" void sc2_ps5_log_stage(const char *);
+extern "C" void *sc2_native_directory_open(const char *, int *);
+extern "C" int sc2_native_directory_next(void *, char[256], unsigned *, std::uint32_t *, int *);
+extern "C" int sc2_native_directory_close(void *, int *);
 #endif
 namespace fs = std::filesystem;
 
@@ -227,12 +230,101 @@ void check_parents(const fs::path &path)
 #endif
 }
 
+#if defined(SC2_PS5)
+struct SaveDirectoryEntry {
+    fs::path value;
+    const fs::path &path() const { return value; }
+};
+
+std::vector<SaveDirectoryEntry> directory_entries(const fs::path &path)
+{
+    if (!plain_directory(path)) ps5_path_failure(path, "save enumeration requires directory");
+    sc2_ps5_log_stage("save:native-directory-r1");
+    sc2_ps5_log_stage(path.c_str());
+    int error = 0;
+    void *stream = sc2_native_directory_open(path.c_str(), &error);
+    if (!stream) ps5_path_failure(path, "native directory open errno=" + std::to_string(error));
+    struct Stream {
+        void *value;
+        const fs::path &path;
+        ~Stream() {
+            if (!value) return;
+            int error = 0;
+            if (sc2_native_directory_close(value, &error) < 0) {
+                sc2_ps5_log_stage("save:directory-close-failed-during-unwind");
+                sc2_ps5_log_stage(path.c_str());
+            }
+        }
+    } held{stream, path};
+    std::vector<SaveDirectoryEntry> entries;
+    std::set<std::string> names;
+    std::size_t seen = 0;
+    for (;;) {
+        char name[256] = {};
+        unsigned type = 0;
+        std::uint32_t inode = 0;
+        error = 0;
+        const int got = sc2_native_directory_next(stream, name, &type, &inode, &error);
+        if (!got) {
+            if (error) ps5_path_failure(path, "native directory read errno=" + std::to_string(error));
+            break; // Only the provider's explicit error-free EOF ends enumeration.
+        }
+        if (got != 1 || error || !std::memchr(name, 0, sizeof name))
+            ps5_path_failure(path, "invalid native directory result");
+        if (++seen > 65536) ps5_path_failure(path, "save directory entry bound exceeded");
+        const std::string leaf(name);
+        if (leaf == "." || leaf == "..") continue;
+        if (leaf.empty()) ps5_path_failure(path, "empty native directory name");
+        for (unsigned char c : leaf)
+            if (c < 32 || c == 127 || c == '/' || c == '\\')
+                ps5_path_failure(path, "invalid native directory name");
+        if (!names.insert(leaf).second) ps5_path_failure(path, "duplicate native directory name");
+        fs::path child = path / leaf;
+        // Do not trust d_type (including DT_UNKNOWN). A nofollow native kind
+        // proof independently rejects links and errors for every returned name.
+        const auto kind = ps5_kind(child);
+        if (kind == PlainKind::missing) ps5_path_failure(child, "save entry disappeared during enumeration");
+        entries.push_back({std::move(child)});
+    }
+    int close_error = 0;
+    void *closing = held.value;
+    held.value = nullptr; // A failed close must not cause a second close.
+    if (sc2_native_directory_close(closing, &close_error) < 0)
+        ps5_path_failure(path, "native directory close errno=" + std::to_string(close_error));
+    return entries;
+}
+
+std::vector<SaveDirectoryEntry> recursive_directory_entries(const fs::path &path)
+{
+    std::vector<SaveDirectoryEntry> result;
+    const auto append = [&](auto &&self, const fs::path &directory, unsigned depth) -> void {
+        if (depth > 128) ps5_path_failure(directory, "save directory depth bound exceeded");
+        for (const auto &entry : directory_entries(directory)) {
+            if (result.size() >= 65536) ps5_path_failure(directory, "save tree entry bound exceeded");
+            result.push_back(entry);
+            if (plain_directory(entry.path())) self(self, entry.path(), depth + 1);
+        }
+    };
+    append(append, path, 0);
+    return result;
+}
+#else
+fs::directory_iterator directory_entries(const fs::path &path)
+{
+    return fs::directory_iterator(path);
+}
+fs::recursive_directory_iterator recursive_directory_entries(const fs::path &path)
+{
+    return fs::recursive_directory_iterator(path);
+}
+#endif
+
 void check_tree(const fs::path &path)
 {
     if (!exists_plain(path)) return;
     require(plain_directory(path) || plain_file(path));
     if (plain_directory(path)) {
-        for (const auto &entry : fs::directory_iterator(path))
+        for (const auto &entry : directory_entries(path))
             check_tree(entry.path());
     }
 }
@@ -245,7 +337,7 @@ void remove_tree(const fs::path &path)
         DWORD attributes = GetFileAttributesW(entry.c_str());
         require(attributes != INVALID_FILE_ATTRIBUTES);
         if ((attributes & FILE_ATTRIBUTE_DIRECTORY) != 0u) {
-            for (const auto &child : fs::directory_iterator(entry))
+            for (const auto &child : directory_entries(entry))
                 self(self, child.path());
         }
         if ((attributes & FILE_ATTRIBUTE_READONLY) != 0u) {
@@ -260,7 +352,7 @@ void remove_tree(const fs::path &path)
     /* Unlinking needs write access to the parent, so open read-only directories. */
     if (exists_plain(path) && plain_directory(path)) {
         fs::permissions(path, fs::perms::owner_all, fs::perm_options::add);
-        for (const auto &entry : fs::recursive_directory_iterator(path))
+        for (const auto &entry : recursive_directory_entries(path))
             if (plain_directory(entry.path()))
                 fs::permissions(entry.path(), fs::perms::owner_all, fs::perm_options::add);
     }
@@ -408,7 +500,7 @@ void save_node(std::string &out, const fs::path &path, const fs::path &relative)
         put(out, read_file(path));
         return;
     }
-    for (const auto &entry : fs::directory_iterator(path))
+    for (const auto &entry : directory_entries(path))
         save_node(out, entry.path(), relative / entry.path().filename());
 }
 
@@ -581,7 +673,7 @@ bool check_journal()
     const std::string_view marker(buffer, sizeof version - 1);
     require(marker == version || marker == legacy_version);
     const bool legacy = marker == legacy_version;
-    for (const auto &entry : fs::directory_iterator(journal)) {
+    for (const auto &entry : directory_entries(journal)) {
         const auto name = entry.path().filename();
         if (name == "staging" || name == "pending" || name == "committed") {
             throw std::runtime_error(
@@ -795,7 +887,7 @@ extern "C" bool recomp_save_end(uint32_t owner, bool success)
                save directory before the unlink that commits the save. */
             if (exists_plain(live)) {
                 sync_to_disk(live);
-                for (const auto &entry : fs::recursive_directory_iterator(live))
+                for (const auto &entry : recursive_directory_entries(live))
                     if (plain_directory(entry.path())) sync_to_disk(entry.path());
             } else {
                 sync_to_disk(live.parent_path());
