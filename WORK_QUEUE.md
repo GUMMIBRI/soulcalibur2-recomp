@@ -35,6 +35,9 @@ excluded from public Git because it includes private diagnostic references.
 
 ## Expansion lane
 
-FEATURE_REQUESTS.md records FR-001 through FR-020. Research can inform future
+FEATURE_REQUESTS.md records FR-001 through FR-021. Research can inform future
 scope; expansion implementation does not displace boot/gameplay. Architecture
 migration requires technical evidence and an approved plan.
+
+FR-021 records investigation of natural SC2-style in-game video settings;
+backlog only, with no runtime or console changes.

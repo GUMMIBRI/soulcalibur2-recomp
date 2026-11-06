@@ -37,6 +37,15 @@ completed. Compilation alone never establishes completion. Updated November6,202
 - Sources and references: runtime/sc2_fsr.cpp; runtime/d3d_presenter_sdl_gpu.cpp; textures layout
 - Acceptance criteria and evidence: PS5 images and measured pacing at selected settings; code/assets exist and intro rendering is confirmed; gameplay, FSR and scaling modes remain unqualified.
 
+### FR-021 — Natural in-game video settings
+
+- Priority: P2
+- Status: proposed
+- Intended behavior: Investigate a Video Settings entry in SC2's options/pause flow that matches the original menu's typography, colors, panels, transitions, sounds and controller navigation. Expose supported resolution1x–8x, FSR/sharpness, widescreen/fullscreen and HD/original texture choices with clear labels and current values.
+- Dependencies and risks: FR-016 and FR-020; inspect original menu hooks/assets versus styling the existing host menu. Preserve gameplay input ownership, pause behavior, settings persistence and multiplayer rules. Some rendering changes may require resource recreation or a restart; do not imply live application where unsupported.
+- Sources and references: runtime/sc2_menu.cpp; runtime/sc2_settings.cpp; runtime/d3d_presenter_sdl_gpu.cpp; original SC2 options/pause flow; existing Parasite Eve graphics settings as a reference rather than a visual transplant.
+- Acceptance criteria and evidence: Controller-only access from an appropriate in-game menu; visual review shows a cohesive SC2 appearance; settings correctly apply or explain restart requirements, persist after relaunch and can return to original/default presentation. Preview risky display changes with confirm/revert behavior where applicable. No implementation or console validation yet; stability remains the immediate priority.
+
 ## Content expansion
 
 ### FR-001 — Expandable character roster
