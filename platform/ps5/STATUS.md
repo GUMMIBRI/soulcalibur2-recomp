@@ -4,8 +4,10 @@ Human discovery failure follow-up: ShadowMount actually detected the title but
 registration failed because sce_sys/icon0.png was missing, then hit its retry
 limit. The owner moved the app to /mnt/usb0/homebrew/Soulcalibur II. A corrected
 real eboot with that explicit fallback path and an original validated launcher
-icon is finalized locally at private/ps5-app-homebrew-test-20261105. USB repair
-awaits fresh games-closed confirmation. No successful registration or boot is
+icon is finalized at private/ps5-app-homebrew-test-20261105. USB repair passed:
+private/shadowmount-diagnosis/REPAIR-5.json records both exact SHA readbacks.
+App is now USB0/homebrew/Soulcalibur II; assets remain at USB root. No successful
+registration or boot is
 claimed. Asset location remains /mnt/usb0/soulcalibur2. Earlier delivery receipts
 below describe the initial files, not a successful launcher installation.
 
