@@ -1,2 +1,3 @@
 # Preserve exact upstream GPL component bytes and recorded source hashes.
 platform/ps5/app/* -text whitespace=cr-at-eol
+platform/ps5/memory/** -text whitespace=cr-at-eol

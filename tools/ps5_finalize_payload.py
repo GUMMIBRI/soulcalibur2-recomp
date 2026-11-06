@@ -285,12 +285,22 @@ def main():
             shutil.copyfile(source, target)
         shutil.copyfile(ROOT / 'platform/ps5/app/SOURCE.json', out / 'legal/PSXS5-SOURCE.json')
         shutil.copyfile(ROOT / 'platform/ps5/app/LOADER-COMPANION.json', out / 'legal/PSXS5-LOADER-SOURCE.json')
+        platform_notices = []
+        if receipt.get('title_heap'):
+            for name in ('LICENSE-GPL-3.0.txt', 'LICENSE-DLMALLOC-MIT-0.txt', 'SOURCE.json'):
+                source = ROOT / 'platform/ps5/memory' / name
+                relative = Path('legal/PS5-Platform') / name
+                target = out / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, target)
+                platform_notices.append(dict(path=relative.as_posix(), source=record(source)))
         shutil.copyfile(ROOT / 'platform/ps5/RELEASE-ENDNOTE.md', out / 'RELEASE-ENDNOTE.md')
         result = dict(schema='sc2.ps5-finalized-app.v1', input=record(elf), link_receipt=record(receipt_path), converter=record(converter),
                       output=record(converted), self=record(self_file), retained_sections=sections, commands=commands,
                       metadata_supplied=bool(args.metadata), metadata=[dict(path=str(r), source=record(p)) for p, r in metadata],
                       loader_companion=record(out / 'sce_module/libc.prx'),
                       syscall_audit=syscall_audit,
+                      platform_notices=platform_notices,
                       application_linked=True, console_executed=False, installed=False, gameplay_verified=False)
         (out / 'FINALIZATION.json').write_text(json.dumps(result, indent=2) + '\n')
         print('Converted application ELF/development SELF locally; no installation or target execution.')

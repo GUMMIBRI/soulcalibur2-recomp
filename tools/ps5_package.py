@@ -185,6 +185,16 @@ def finalized_app(receipt_path, selected=None):
             png_icon(source)
         metadata.append((source, relative))
     selected_metadata = {relative.as_posix() for _, relative in metadata}
+    for item in value.get('platform_notices', []):
+        relative = Path(item['path'])
+        if relative.as_posix() not in {'legal/PS5-Platform/' + name for name in
+                ('LICENSE-GPL-3.0.txt', 'LICENSE-DLMALLOC-MIT-0.txt', 'SOURCE.json')}:
+            raise ValueError('unrecognized platform notice path')
+        source = plain_path(receipt_path.parent / relative)
+        record = item['source']
+        if source.stat().st_size != record['bytes'] or digest(source) != record['sha256']:
+            raise ValueError('platform notice differs from finalization')
+        metadata.append((source, relative))
     if 'sce_module/libc.prx' not in selected_metadata:
         raise ValueError('finalized application is missing its signed public loader companion')
     if value.get("metadata_supplied") or "sce_sys/param.json" in selected_metadata:

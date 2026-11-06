@@ -16,7 +16,8 @@ from pathlib import Path
 import subprocess
 import sys
 
-from ps5_compile_host import validate_object, compile_record, validate_install_root
+from ps5_compile_host import (validate_object, compile_record, validate_install_root, verify_title_heap,
+                              TITLE_HEAP_MEMORY, TITLE_HEAP_WRAPS, TITLE_HEAP_GUARDS)
 
 ROOT = Path(__file__).resolve().parents[1]
 PLATFORM_OBJECTS = (
@@ -125,6 +126,55 @@ def application_libc(sdk, llvm):
         pending.unlink(missing_ok=True)
 
 
+def application_title_heap(library, llvm):
+    """Pin the public backend and remove its replaced wrapper object privately."""
+    source = verify_title_heap(library)
+    ar = llvm.resolve() / ("llvm-ar.exe" if sys.platform == "win32" else "llvm-ar")
+    def members(path):
+        result = run([ar, "t", path])
+        if result.returncode:
+            raise ValueError("cannot inventory public title heap: " + result.stderr)
+        return result.stdout.splitlines()
+    before = members(source)
+    if any(before.count(name) != 1 for name in ("heap.o", "heap_wrap.o", "mspace.o", "placement.o")):
+        raise ValueError("public platform archive has an unexpected heap member layout")
+    expected = [name for name in before if name != "heap_wrap.o"]
+    out = ROOT / "private/ps5-title-heap"
+    out.mkdir(parents=True, exist_ok=True)
+    derived, receipt_path = out / "libps5platform.a", out / "archive-transform.json"
+    source_hash, tool_hash = digest(source), digest(ar)
+    record = None
+    try:
+        previous = json.loads(receipt_path.read_text(encoding="utf-8"))
+        if (previous.get("source_sha256") == source_hash and previous.get("ar_sha256") == tool_hash and
+                previous.get("removed_members") == ["heap_wrap.o"] and
+                digest(derived) == previous.get("derived_sha256") and members(derived) == expected):
+            record = previous
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    if record is None:
+        pending = out / "libps5platform.a.pending"
+        pending.unlink(missing_ok=True)
+        command = [str(ar), "d", str(pending), "heap_wrap.o"]
+        try:
+            shutil.copyfile(source, pending)
+            result = run(command)
+            if result.returncode or members(pending) != expected or digest(source) != source_hash:
+                raise ValueError("title heap exact wrapper-member removal failed")
+            pending.replace(derived)
+            record = dict(schema="sc2.ps5-title-heap.v1", source=str(source), source_sha256=source_hash,
+                          derived=str(derived), derived_sha256=digest(derived), removed_members=["heap_wrap.o"],
+                          ar=str(ar), ar_sha256=tool_hash, command=command,
+                          source_revision="b83202be73e930050e00de0f1b4d9ec46c0391bf",
+                          libc_wraps=list(TITLE_HEAP_WRAPS), guarded_title_entries=list(TITLE_HEAP_GUARDS),
+                          source_entry_renames={"__wrap_" + n: "sc2_heap_" + n for n in ("malloc", "calloc", "realloc")},
+                          executed=False)
+            receipt_path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+        finally:
+            pending.unlink(missing_ok=True)
+    return derived, [source, receipt_path, *sorted(p for p in TITLE_HEAP_MEMORY.rglob("*") if p.is_file())], record
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--llvm", type=Path, required=True, help="LLVM bin directory")
@@ -137,6 +187,8 @@ def main():
     parser.add_argument("--shaderc-library", type=Path, help="real target libshaderc_combined.a")
     parser.add_argument("--shaderc-receipt", type=Path, default=ROOT / "private/ps5-shaderc/receipt.json",
                         help="successful target shaderc build receipt matching the exact archive")
+    parser.add_argument("--title-heap", action="store_true", help="opt-in conditional private-NULL fallback to reviewed public title heap")
+    parser.add_argument("--title-heap-library", type=Path, help="verified public b83202 libps5platform.a")
     parser.add_argument("--platform-library", type=Path,
                         help="optional real public platform support archive; never a generated stub")
     modes = parser.add_mutually_exclusive_group()
@@ -151,6 +203,10 @@ def main():
     parser.add_argument("--full-runner", action="store_true",
                         help="include actual runner/adapter/game objects; generated guest still required")
     args = parser.parse_args()
+    if args.title_heap and (not args.application or not args.title_heap_library or args.platform_library):
+        parser.error("--title-heap requires --application --title-heap-library and excludes --platform-library")
+    if args.title_heap_library and not args.title_heap:
+        parser.error("--title-heap-library requires explicit --title-heap")
     executable_mode = args.payload or args.application
     if executable_mode and (not args.full_runner or not args.guest_receipt or not args.xbe):
         parser.error("--payload/--application requires --full-runner --guest-receipt --xbe")
@@ -226,6 +282,7 @@ def main():
             parser.error(str(error))
     app_inputs = []
     libc_transform = None
+    title_heap_transform = None
     if args.application:
         try:
             units.append(application_crt(args.sdk, args.llvm))
@@ -239,6 +296,16 @@ def main():
         app_inputs = [ROOT / ("platform/ps5/app/" + name) for name in
                       ("app_crt.cpp", "ps5-pie.ld", "ps5-pie-unwind.ld", "app-symbols.map", "SOURCE.json")]
         app_inputs.extend([ROOT / "runtime/sc2_ps5_startup.c", ROOT / "runtime/sc2_ps5_posix.c", ROOT / "runtime/sc2_ps5_cpp_diagnostics.cpp", *transform_inputs])
+    if args.title_heap:
+        try:
+            title_archive, title_inputs, title_heap_transform = application_title_heap(args.title_heap_library, args.llvm)
+            archives.append(title_archive)
+            app_inputs.extend(title_inputs)
+            app_inputs.append(ROOT / "runtime/sc2_ps5_allocation.c")
+            units += [ROOT / "private/ps5-host-objects/sc2_ps5_allocation.o",
+                      ROOT / "private/ps5-host-objects/sc2_heap_wrap.o"]
+        except (ValueError, OSError, KeyError) as error:
+            parser.error(str(error))
     units = list(dict.fromkeys(path.resolve() for path in units))
     # Every selected object, including renderer/kernel and --extra-object inputs,
     # must have the dependency-tracked receipt produced by the actual compiler.
@@ -261,6 +328,13 @@ def main():
                 root_define = "-DSC2_PS5_INSTALL_ROOT=" + json.dumps(args.eboot_dir)
                 if root_define not in row["command"]:
                     raise ValueError("runner/startup must be compiled with the same explicit --eboot-dir as this application")
+            if obj.stem in ("sc2_ps5_allocation", "sc2_heap_wrap"):
+                if not args.title_heap or "-DSC2_PS5_TITLE_HEAP=1" not in row["command"]:
+                    raise ValueError("title heap objects require matching explicit opt-in compilation/linkage")
+                if obj.stem == "sc2_heap_wrap" and not all(
+                        "-D__wrap_" + name + "=sc2_heap_" + name in row["command"]
+                        for name in ("malloc", "calloc", "realloc")):
+                    raise ValueError("public heap wrapper object lacks the reviewed three entry renames")
             if obj.stem == "d3d_shader_compiler":
                 native = "-DRECOMP_SHADERC_LINKED=1" in row["command"]
                 if native != bool(args.shaderc_library):
@@ -318,12 +392,14 @@ def main():
                "--end-group", "-o", linked]
     if args.full_runner:
         command.append("--error-limit=0")
+    if args.title_heap:
+        command += ["--wrap=" + symbol for symbol in (*TITLE_HEAP_WRAPS, *TITLE_HEAP_GUARDS)]
     crt_inputs = []
     if args.application:
         app = ROOT / "platform/ps5/app"
         # This CRT runs the constructor/finalizer arrays. Do not mix the SDK's
         # payload crt1 or another CRT's _init/_fini into the application.
-        command.extend(["--wrap=abort_message", "--no-dynamic-linker", "--gc-sections", "--exclude-libs=ALL",
+        command.extend(["--wrap=abort_message", "--wrap=__cxa_throw", "--no-dynamic-linker", "--gc-sections", "--exclude-libs=ALL",
                         "--version-script=" + str(app / "app-symbols.map"), "-L", app,
                         "-T", app / "ps5-pie-unwind.ld", "--eh-frame-hdr", *imports])
     elif args.strict_shared or args.payload:
@@ -388,6 +464,7 @@ def main():
                    relocatable_link_succeeded=link_success and not args.strict_shared and not executable_mode,
                    strict_shared_link_succeeded=link_success and args.strict_shared,
                    fully_linked=executable_mode and link_success and not remaining,
+                   title_heap=title_heap_transform,
                    application_abort_wrap=abort_wrap,
                    application_abi="sc2.ps5-application.v1" if args.application else None,
                    application_libc_transform=libc_transform,

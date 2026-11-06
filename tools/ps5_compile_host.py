@@ -243,6 +243,29 @@ def validate_install_root(value):
     return value
 
 
+TITLE_HEAP_WRAPS = ("malloc", "calloc", "realloc", "free", "posix_memalign", "aligned_alloc", "memalign",
+                    "malloc_usable_size", "reallocf", "reallocarray", "getline", "getdelim")
+TITLE_HEAP_GUARDS = ("ps5_heap_malloc", "ps5_heap_calloc", "ps5_heap_memalign", "ps5_heap_realloc")
+TITLE_HEAP_MEMORY = ROOT / "platform/ps5/memory"
+TITLE_HEAP_LIBRARY_SHA = "a6b6f96ec969a3aa1c9de2dc3d0b744cb50bd44c4e2d1398538b52ee9ba3c00e"
+
+
+def verify_title_heap(library):
+    library = Path(library).resolve()
+    if library.stat().st_size != 371844 or digest(library) != TITLE_HEAP_LIBRARY_SHA:
+        raise ValueError("title heap requires the verified public b83202 PS5 platform archive")
+    pins = {"heap_wrap.c": "88188f58a64a3aa67ab845e760300d3f21e2b651ae9dd56d06fb529c356a5d34",
+            "include/ps5platform/heap.h": "e15598af8b6e446105c31330845006c4866be8e35f7e323d5694eba596972620"}
+    for name, expected in pins.items():
+        if digest(TITLE_HEAP_MEMORY / name) != expected:
+            raise ValueError("public title-heap source/header differs from its reviewed pin: " + name)
+    record = json.loads((TITLE_HEAP_MEMORY / "SOURCE.json").read_text(encoding="utf-8"))
+    if (record["revision"] != "b83202be73e930050e00de0f1b4d9ec46c0391bf" or
+            record["library"]["sha256"] != TITLE_HEAP_LIBRARY_SHA):
+        raise ValueError("title heap source provenance differs from reviewed public dependency")
+    return library
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sdk", required=True, type=Path)
@@ -250,18 +273,27 @@ def main():
     parser.add_argument("--sdl", required=True, type=Path, help="console SDL3 install prefix")
     parser.add_argument("--imgui", type=Path, default=ROOT / "private/deps/imgui-1.91.9",
                         help="upstream pinned ImGui source directory (v1.91.9)")
+    parser.add_argument("--title-heap", action="store_true", help="explicit opt-in private-failure/public-title-heap bridge")
+    parser.add_argument("--title-heap-library", type=Path, help="verified public b83202 libps5platform.a")
     parser.add_argument("--compiler-rt", type=Path, help="licensed compiler-rt cpu_model source directory")
     parser.add_argument("--shaderc-include", type=Path, help="built target shaderc public include directory")
     parser.add_argument("--incremental", action="store_true", help="reuse only dependency-validated unchanged objects")
     parser.add_argument("--opt-level", choices=("0", "1", "2", "3", "s"), default="2",
                         help="production optimization level; changing it invalidates incremental objects")
     parser.add_argument("--only", action="append", help="compile only these source basenames (repeatable)")
-    parser.add_argument("--group", choices=("host", "kernel", "runner", "adapters", "game", "startup", "posix", "cpp-diagnostics"), default="host",
+    parser.add_argument("--group", choices=("host", "kernel", "runner", "adapters", "game", "startup", "posix", "cpp-diagnostics", "title-heap"), default="host",
                         help="actual upstream target source group; no guest substitutes")
     parser.add_argument("--eboot-dir", help="explicit PS5 test-install directory embedded in runner startup")
     parser.add_argument("--xbe-sha256", default="7ce12851850ab46766f77c612b251afe7c8bd81f879e11b4836bdf766be542c6",
                         help="expected USA executable metadata for runner compile; does not validate any game input")
     args = parser.parse_args()
+    if args.title_heap or args.group == "title-heap":
+        if not args.title_heap or args.group != "title-heap" or not args.title_heap_library:
+            parser.error("title heap compilation requires --group title-heap --title-heap --title-heap-library")
+        try:
+            verify_title_heap(args.title_heap_library)
+        except (OSError, ValueError, KeyError) as error:
+            parser.error(str(error))
     if len(args.xbe_sha256) != 64 or any(c not in "0123456789abcdef" for c in args.xbe_sha256):
         parser.error("expected XBE SHA-256 must be 64 lowercase hexadecimal digits")
     if args.group in ("startup", "posix") and not args.eboot_dir:
@@ -294,8 +326,10 @@ def main():
         common.append('-DRECOMP_XBE_SHA256="' + args.xbe_sha256 + '"')
     if args.group in ("runner", "startup", "posix") and args.eboot_dir:
         common.append("-DSC2_PS5_INSTALL_ROOT=" + json.dumps(args.eboot_dir))
-    if args.group in ("posix", "cpp-diagnostics"):
+    if args.group in ("posix", "cpp-diagnostics", "title-heap"):
         common.append("-DSC2_PS5_APPLICATION=1")
+    if args.group == "title-heap":
+        common += ["-DSC2_PS5_TITLE_HEAP=1", "-I", str(TITLE_HEAP_MEMORY / "include")]
     if args.group == "startup":
         # Prevent compiler-generated strlen/memcpy helpers before libc exists.
         common += ["-ffreestanding", "-fno-builtin"]
@@ -319,6 +353,8 @@ def main():
              ("sc2_ps5_cpp_diagnostics.cpp",) if args.group == "cpp-diagnostics" else
              ADAPTER_SOURCES if args.group == "adapters" else game_sources() if args.group == "game" else SOURCES)
     sources = [merged / name for name in names]
+    if args.group == "title-heap":
+        sources = [merged / "sc2_ps5_allocation.c", TITLE_HEAP_MEMORY / "heap_wrap.c"]
     if args.group == "host":
         sources += [*imgui_sources, adapter]
     if args.compiler_rt:
@@ -334,14 +370,17 @@ def main():
     for source in sources:
         cxx = source.suffix == ".cpp"
         compiler = llvm / (("clang++" if cxx else "clang") + suffix)
-        obj = out / (source.stem + ".o")
+        obj = out / (("sc2_heap_wrap" if args.group == "title-heap" and source.name == "heap_wrap.c" else source.stem) + ".o")
         includes = (["-isystem", str(sdk / "target/include/c++/v1")] if cxx else [])
         command = [str(compiler), *common, *includes, "-isystem", str(sdk / "target/include"),
                    *(["-std=c++17", "-fexceptions", "-frtti"] if cxx else
                      [] if source.suffix in (".S", ".s") else ["-std=c11"]),
                    "-I", str(ROOT / "runtime"),
                    "-c", str(source), "-o", str(obj)]
-        log = out / (source.stem + ".log")
+        if args.group == "title-heap" and source.name == "heap_wrap.c":
+            command += ["-D__wrap_malloc=sc2_heap_malloc", "-D__wrap_calloc=sc2_heap_calloc",
+                        "-D__wrap_realloc=sc2_heap_realloc"]
+        log = out / (obj.stem + ".log")
         row = None
         if args.incremental and obj.with_suffix(".object.json").is_file():
             try:

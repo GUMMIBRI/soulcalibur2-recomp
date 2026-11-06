@@ -1,0 +1,41 @@
+{
+  "repository": "https://github.com/mihawk-99/PS5_PayloadSDK",
+  "revision": "b83202be73e930050e00de0f1b4d9ec46c0391bf",
+  "files": [
+    {
+      "path": "platform/src/heap_wrap.c",
+      "sha256": "88188f58a64a3aa67ab845e760300d3f21e2b651ae9dd56d06fb529c356a5d34"
+    },
+    {
+      "path": "platform/include/ps5platform/heap.h",
+      "sha256": "e15598af8b6e446105c31330845006c4866be8e35f7e323d5694eba596972620"
+    },
+    {
+      "path": "platform/src/heap.c",
+      "sha256": "855bd48a719ae06b1170bbf8ef25a5577779f962eae9bdb3322a146bde8ebfe0"
+    },
+    {
+      "path": "platform/src/placement.c",
+      "sha256": "3b87284094e459f8d3133b0e4b736536fef5c099f0ae27b8d6e5a2f89013ca28"
+    },
+    {
+      "path": "platform/src/dlmalloc/mspace.c",
+      "sha256": "48f6cca7d08b3abe4bc9e1802c3cf516b7f8da795bd26737e9bfc1ecd9ef6776"
+    },
+    {
+      "path": "platform/src/dlmalloc/malloc.c",
+      "sha256": "be7be56b40b4b31417e74e77687f9b96127ea6cae534cf236aee40a4c739508d"
+    },
+    {
+      "path": "platform/src/dlmalloc/SOURCE",
+      "sha256": "b6ac826c3b163d5513fc646b46514c83a7f2009d3cd2e51453a2c91bb89033af"
+    }
+  ],
+  "library": {
+    "bytes": 371844,
+    "sha256": "a6b6f96ec969a3aa1c9de2dc3d0b744cb50bd44c4e2d1398538b52ee9ba3c00e"
+  },
+  "notes": "Source/header copied without changes; entry renames are compile definitions. The verified public platform archive remains external.",
+  "source_snapshot": "PS5_PayloadSDK-b83202be73e930050e00de0f1b4d9ec46c0391bf",
+  "repository_note": "Repository/revision confirmed from the working PE public dependency pin manifest."
+}
