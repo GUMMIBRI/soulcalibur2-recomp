@@ -29,7 +29,9 @@ spellings) takes priority. Otherwise disc.iso takes priority; with no such
 conventional name, one .iso is accepted case-insensitively. Multiple distinct
 images require explicit --disc selection or renaming the Xbox image disc.iso;
 the runtime does not guess among donor games. Directory discovery is bounded
-to256 entries. Files resolve canonically and cannot escape the selected asset
+to256 entries. Files use bounded absolute lexical paths and native lstat
+component checks; dot traversal, symlinks and nondirectory ancestors reject.
+They cannot escape the selected asset
 root through a link. The actual Xbox image reader and executable fingerprint
 validation still decide whether the selected input is supported.
 

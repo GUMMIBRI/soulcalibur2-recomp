@@ -134,9 +134,8 @@ inline std::filesystem::path ShaderNativeCacheDirectory()
     if (!retained || !*retained) return {};
     const std::filesystem::path supplied(retained);
     if (!supplied.is_absolute()) return {};
-    std::error_code ec;
-    const auto eboot = std::filesystem::canonical(supplied, ec);
-    if (ec || !PS5WritablePath(eboot) || !std::filesystem::is_directory(eboot, ec)) return {};
+    std::filesystem::path eboot;
+    if (!PS5NativeDirectory(supplied, eboot) || !PS5WritablePath(eboot)) return {};
     const auto cache = eboot / "shader-cache";
     if (!PS5PathWithin(cache, eboot) || !PS5WritablePath(cache)) return {};
     return cache;

@@ -87,6 +87,20 @@ __attribute__((constructor(101))) static void sc2_ps5_constructors_entered(void)
     sc2_ps5_log_stage("CRT constructor array entered");
 }
 
+/* The licensed CRT offers this weak hook before its normal exit/atexit path.
+   Record the real result without replacing platform termination or cleanup. */
+void catchReturnFromMain(int status)
+{
+    char number[12];
+    size_t at = sizeof(number) - 1;
+    unsigned value = status < 0 ? 0u - (unsigned)status : (unsigned)status;
+    number[at] = 0;
+    do { number[--at] = (char)('0' + value % 10u); value /= 10u; } while (value);
+    if (status < 0) number[--at] = '-';
+    sc2_ps5_log_stage("CRT: main returned; status follows");
+    sc2_ps5_log_stage(number + at);
+}
+
 __attribute__((noreturn, visibility("default")))
 void sc2_ps5_start(void *parameters, void (*loader_teardown)(void))
 {

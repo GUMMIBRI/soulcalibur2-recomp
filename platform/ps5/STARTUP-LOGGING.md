@@ -15,6 +15,9 @@ application with that exact root. The linker validates both compile receipts.
 No `/data` logging fallback is used. Logs are appended, not shipped or cleared.
 An absent log does not prove a specific fault: rejection before application
 entry, unavailable kernel imports or an unwritable path can prevent logging.
+The CRT's existing return hook now logs the actual main return status before
+the unchanged normal exit/atexit sequence. This distinguishes an earlier
+validation failure from a later termination error; it does not replace cleanup.
 
 The first human launch registered the app but reported
 `0xa0020102 PRX_SCE_MODULE_LOAD_ERROR`. Reviewing the working PE native recipe

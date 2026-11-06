@@ -1,5 +1,17 @@
 # PS5 homebrew port
 
+Latest retest passed early startup/diagnostics/argument handling but rejected
+the physical eboot folder during canonical-path validation. The subsequent
+SIGSYS backtrace matches the CRT exit call after that return73; it does not
+establish a renderer fault. Path helpers now use bounded native lstat component
+checks without canonical/readlink/CWD resolution, retaining containment and
+symlink rejection. Shader cache uses the same helper; CRT logs the actual main
+return code. Six affected TUs compiled, full359-import application link passed,
+decoded syscall count remains zero and SELF integrity passed. New test eboot is
+uploaded at USB0/homebrew/Soulcalibur II; receipt
+private/syscall-fix-retest/PATH-FIX-UPLOAD.json. Human test pending. Future
+transfers use local hashes and remote sizes; owner does not want LAN hash reads.
+
 Latest logging test reached entry/constructors/main, then0xa002030a
 SYSTEM_ILLEGAL_FUNCTION_CALL. A relative-argv pathconf raw-syscall route was
 identified statically; actual crash PC/argv remain unknown. The new app uses
