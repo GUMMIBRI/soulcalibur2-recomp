@@ -231,13 +231,14 @@ def main():
             units.append(application_crt(args.sdk, args.llvm))
             units.append(ROOT / "private/ps5-host-objects/sc2_ps5_startup.o")
             units.append(ROOT / "private/ps5-host-objects/sc2_ps5_posix.o")
+            units.append(ROOT / "private/ps5-host-objects/sc2_ps5_cpp_diagnostics.o")
             derived_libc, transform_inputs, libc_transform = application_libc(args.sdk, args.llvm)
             archives = [derived_libc if path == sdk_lib / "libc.a" else path for path in archives]
         except (ValueError, OSError) as error:
             parser.error(str(error))
         app_inputs = [ROOT / ("platform/ps5/app/" + name) for name in
                       ("app_crt.cpp", "ps5-pie.ld", "ps5-pie-unwind.ld", "app-symbols.map", "SOURCE.json")]
-        app_inputs.extend([ROOT / "runtime/sc2_ps5_startup.c", ROOT / "runtime/sc2_ps5_posix.c", *transform_inputs])
+        app_inputs.extend([ROOT / "runtime/sc2_ps5_startup.c", ROOT / "runtime/sc2_ps5_posix.c", ROOT / "runtime/sc2_ps5_cpp_diagnostics.cpp", *transform_inputs])
     units = list(dict.fromkeys(path.resolve() for path in units))
     # Every selected object, including renderer/kernel and --extra-object inputs,
     # must have the dependency-tracked receipt produced by the actual compiler.
@@ -254,8 +255,8 @@ def main():
                 raise ValueError(f"object is not compiled for the selected PS5 target: {obj}")
             if Path(row["compiler"]).resolve().parent != args.llvm.resolve():
                 raise ValueError(f"object was compiled with another LLVM installation: {obj}")
-            if args.application and obj.stem == "sc2_ps5_posix" and "-DSC2_PS5_APPLICATION=1" not in row["command"]:
-                raise ValueError("application POSIX adapter must be compiled with --group posix")
+            if args.application and obj.stem in ("sc2_ps5_posix", "sc2_ps5_cpp_diagnostics") and "-DSC2_PS5_APPLICATION=1" not in row["command"]:
+                raise ValueError("application service/diagnostic adapter must be compiled in its application-only group")
             if args.application and obj.stem in ("runner", "sc2_ps5_startup", "sc2_ps5_posix"):
                 root_define = "-DSC2_PS5_INSTALL_ROOT=" + json.dumps(args.eboot_dir)
                 if root_define not in row["command"]:
@@ -292,6 +293,19 @@ def main():
         symbols = run([nm, "--defined-only", "--just-symbol-name", path])
         if symbols.returncode or symbol not in symbols.stdout.splitlines():
             parser.error(f"{path} does not provide required backend symbol {symbol}")
+    abort_wrap = None
+    if args.application:
+        abi = sdk_lib / "libc++abi.a"
+        definitions = run([nm, "--defined-only", "--format=posix", abi])
+        references = run([nm, "--undefined-only", "--format=posix", abi])
+        defined = [line for line in definitions.stdout.splitlines()
+                   if re.match(r"^abort_message [TW] ", line)]
+        referred = [line for line in references.stdout.splitlines()
+                    if re.match(r"^abort_message U(?: |$)", line)]
+        if definitions.returncode or references.returncode or len(defined) != 1 or not referred:
+            parser.error("libc++abi abort_message is not a verified global cross-object wrap target")
+        abort_wrap = dict(symbol="abort_message", global_definition=defined[0],
+                          undefined_reference_count=len(referred), wrapper="__wrap_abort_message")
     out = ROOT / "private/ps5-gpu-link"
     out.mkdir(parents=True, exist_ok=True)
     linked = out / ("sc2-app.elf" if args.application else "eboot.elf" if args.payload else "sc2-runner.so" if args.full_runner and args.strict_shared else
@@ -309,7 +323,7 @@ def main():
         app = ROOT / "platform/ps5/app"
         # This CRT runs the constructor/finalizer arrays. Do not mix the SDK's
         # payload crt1 or another CRT's _init/_fini into the application.
-        command.extend(["--no-dynamic-linker", "--gc-sections", "--exclude-libs=ALL",
+        command.extend(["--wrap=abort_message", "--no-dynamic-linker", "--gc-sections", "--exclude-libs=ALL",
                         "--version-script=" + str(app / "app-symbols.map"), "-L", app,
                         "-T", app / "ps5-pie-unwind.ld", "--eh-frame-hdr", *imports])
     elif args.strict_shared or args.payload:
@@ -374,6 +388,7 @@ def main():
                    relocatable_link_succeeded=link_success and not args.strict_shared and not executable_mode,
                    strict_shared_link_succeeded=link_success and args.strict_shared,
                    fully_linked=executable_mode and link_success and not remaining,
+                   application_abort_wrap=abort_wrap,
                    application_abi="sc2.ps5-application.v1" if args.application else None,
                    application_libc_transform=libc_transform,
                    application_entry="sc2_ps5_start" if args.application else None,

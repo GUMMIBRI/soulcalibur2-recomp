@@ -91,6 +91,7 @@ RecompFunction recomp_program_lookup(std::uint32_t address);
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -1054,19 +1055,26 @@ int main(int argc, char **argv)
             if (argc > 0 && argv && argv[0]) {
                 SC2_PS5_STAGE("runner:initial-argv0-inspect");
                 const auto supplied = std::filesystem::u8path(argv[0]);
+                std::filesystem::path physicalRoot;
                 if (supplied.is_absolute() && supplied.has_filename() &&
-                    sc2::PS5WritablePath(supplied.parent_path())) {
-                    runnerPath = supplied.u8string();
-                    SC2_PS5_STAGE("runner:initial-physical-executable");
+                    sc2::PS5LexicalPath(supplied.parent_path(), physicalRoot) &&
+                    sc2::PS5AppNamespace(physicalRoot)) {
+                    // Retain the loader identity before native validation;
+                    // validation must open this anchor, not its system parents.
+                    setenv("SC2_PS5_EBOOT_DIR", physicalRoot.string().c_str(), 0);
+                    if (sc2::PS5WritablePath(physicalRoot)) {
+                        runnerPath = supplied.u8string();
+                        SC2_PS5_STAGE("runner:initial-physical-executable");
+                    } else unsetenv("SC2_PS5_EBOOT_DIR");
                 }
             }
 #if defined(SC2_PS5_INSTALL_ROOT)
             if (runnerPath.empty()) {
                 SC2_PS5_STAGE("runner:initial-root-compiled");
                 const auto root = std::filesystem::u8path(SC2_PS5_INSTALL_ROOT);
+                setenv("SC2_PS5_EBOOT_DIR", SC2_PS5_INSTALL_ROOT, 0);
                 if (root.is_absolute() && sc2::PS5WritablePath(root)) {
                     runnerPath = (root / "eboot.bin").u8string();
-                    setenv("SC2_PS5_EBOOT_DIR", SC2_PS5_INSTALL_ROOT, 0);
                 }
             }
 #endif
@@ -1379,8 +1387,26 @@ int main(int argc, char **argv)
             return 1;
         }
     }
+#if defined(SC2_PS5)
+    doaxbv::XbeParseResult parsed;
+    SC2_PS5_STAGE("runner:xbe-parse-begin");
+    SC2_PS5_STAGE(discImage.empty() ? xbePath.c_str() : discImage.c_str());
+    try {
+        parsed = discImage.empty() ? doaxbv::XbeParser().parse(std::filesystem::u8path(xbePath))
+                                  : doaxbv::XbeParser().parse(std::move(imageXbe));
+    } catch (const std::exception &failure) {
+        SC2_PS5_STAGE("runner:xbe-parse-exception");
+        SC2_PS5_STAGE(failure.what());
+        return 1;
+    } catch (...) {
+        SC2_PS5_STAGE("runner:xbe-parse-unknown-exception");
+        return 1;
+    }
+    SC2_PS5_STAGE("runner:xbe-parse-returned");
+#else
     const auto parsed = discImage.empty() ? doaxbv::XbeParser().parse(std::filesystem::u8path(xbePath))
-                                          : doaxbv::XbeParser().parse(std::move(imageXbe));
+                                        : doaxbv::XbeParser().parse(std::move(imageXbe));
+#endif
     if (!parsed.ok()) {
         SC2_PS5_STAGE("runner:xbe-parse-failed");
         std::cerr << "recomp runner: " << parsed.errors.front() << '\n';

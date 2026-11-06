@@ -19,6 +19,16 @@ The CRT's existing return hook now logs the actual main return status before
 the unchanged normal exit/atexit sequence. This distinguishes an earlier
 validation failure from a later termination error; it does not replace cleanup.
 
+Application builds also wrap the verified global libc++abi `abort_message`
+symbol. A bounded stack formatter sends the actual fatal text to the kernel
+stage logger before forwarding to the real fatal handler. It does not recover
+from or swallow a fatal error. Parser exceptions are logged with `what()` and
+return failure; XBE identity checks remain unchanged. This was added after the
+USB-anchor test reached game validation and aborted inside the C++ ABI handler
+without a usable exception message. The diagnostic build is
+private/ps5-app-cpp-diagnostics-20261105; its size-only USB update receipt is
+private/anchor-retest/CPP-DIAGNOSTIC-UPLOAD.json. Human retest is pending.
+
 The first human launch registered the app but reported
 `0xa0020102 PRX_SCE_MODULE_LOAD_ERROR`. Reviewing the working PE native recipe
 identified the missing public source-built `sce_module/libc.prx` loader shim.
