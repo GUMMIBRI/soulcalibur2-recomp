@@ -47,11 +47,25 @@ def parse_report(raw, limit=PER_FILE):
             if text == 'CRT: main returned; status follows' and re.fullmatch(r'-?[0-9]+', stages[index + 1][1]):
                 returns.append(int(stages[index + 1][1]))
         closed = any(text in SHUTDOWN for _, text in stages)
+        fatal = [text for _, text in stages if text.startswith('SC2 fatal POSIX observation v1; signal=')]
+        opaque_count = sum(text.startswith('SC2 opaque-context unverified offset=') for _, text in stages)
+        gpu_errors = [text for _, text in stages if text.startswith('GPU stage=') and
+                      re.search(r'(?:^| )first_negative=1(?: |$)', text)]
+        capture_statuses = [text for _, text in stages if text.startswith(('fatal-capture signal=', 'fatal-capture:'))]
+        anchors = [text for _, text in stages if re.fullmatch(
+            r'(?:anchor (?:app entry|libkernel open|libc malloc)|throw wrapper)=0x[0-9a-f]{16}\s*', text)]
         result.append(dict(build_ids=build_ids, build_identity_observed=bool(build_ids),
                            stage_count=len(stages), last_sequence=stages[-1][0],
                            last_stage=stages[-1][1], main_return_statuses=returns,
                            closure='shutdown marker observed' if closed else 'no shutdown marker',
                            crash_proven=False,
+                           fatal_observations=fatal,
+                           fatal_observation_meaning=('received POSIX signal; root cause and OS dialog not identified' if fatal else None),
+                           opaque_context_records=opaque_count,
+                           opaque_context_interpretation='unverified opaque bytes; not decoded registers or a backtrace',
+                           gpu_first_errors=gpu_errors,
+                           capture_registration_statuses=capture_statuses,
+                           safe_address_anchors=anchors,
                            entry_marker_observed=stages[0] == (1, 'application entry before CRT')))
     return dict(runs=result, run_count=len(result), utf8_replacement_used='\ufffd' in raw.decode('utf-8', errors='replace'))
 
@@ -350,6 +364,25 @@ def self_test():
     assert not value['runs'][1]['build_identity_observed']
     assert not value['runs'][1]['crash_proven']
     assert parse_report(b'1 application entry before CRT\n2 CRT: shutdown complete\n')['runs'][0]['closure'] == 'shutdown marker observed'
+    fatal_header = 'SC2 fatal POSIX observation v1; signal=11 si_code=1 si_addr=0x0000000000000010 context=0x0000000000010000'
+    gpu_error = 'GPU stage=create-device result=-1 a=0 b=0 first_negative=1'
+    capture_status = 'fatal-capture signal=11 status=installed errno=0'
+    anchor = 'anchor app entry=0x0000000000400000'
+    fault_stages = ['application entry before CRT', capture_status, anchor, fatal_header]
+    fault_stages += [f'SC2 opaque-context unverified offset=0x{i * 16:016x} bytes=' + '00' * 16 for i in range(16)]
+    fault_stages += [gpu_error, 'GPU stage=later result=-2 a=0 b=0',
+                     'SC2 fatal observation end; OS error text/code not captured']
+    fault_run = ''.join(f'{index} {text}\n' for index, text in enumerate(fault_stages, 1))
+    observed = parse_report((one + fault_run).encode())['runs']
+    assert len(observed) == 2 and observed[0]['fatal_observations'] == []
+    assert observed[0]['opaque_context_records'] == 0 and observed[0]['gpu_first_errors'] == []
+    assert observed[1]['fatal_observations'] == [fatal_header]
+    assert observed[1]['opaque_context_records'] == 16
+    assert observed[1]['gpu_first_errors'] == [gpu_error]
+    assert observed[1]['capture_registration_statuses'] == [capture_status]
+    assert observed[1]['safe_address_anchors'] == [anchor]
+    assert observed[1]['closure'] == 'no shutdown marker' and not observed[1]['crash_proven']
+
     try:
         parse_report(b'12345', limit=4)
         raise AssertionError('oversized report accepted')
