@@ -12,6 +12,7 @@ import re
 import shutil
 import struct
 import subprocess
+import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
 PRIVATE = ROOT / 'private'
@@ -37,6 +38,59 @@ def plain(path):
 
 def record(path):
     return dict(path=str(path), bytes=path.stat().st_size, sha256=digest(path))
+
+
+def png_icon(path):
+    """Check the actual bounded PNG stream, not a filename or IHDR alone."""
+    if not path.is_file() or not 57 <= path.stat().st_size <= 8 * 1024 * 1024:
+        raise ValueError('required app icon missing/oversized: ' + str(path))
+    data = path.read_bytes()
+    if data[:8] != b'\x89PNG\r\n\x1a\n':
+        raise ValueError('app icon must contain a real PNG signature: ' + str(path))
+    at, count, width, height, channels = 8, 0, 0, 0, 0
+    compressed = bytearray()
+    ended = False
+    while at < len(data):
+        count += 1
+        if count > 4096 or len(data) - at < 12:
+            raise ValueError('truncated/excessive PNG chunks')
+        size, = struct.unpack_from('>I', data, at)
+        if size > len(data) - at - 12:
+            raise ValueError('PNG chunk exceeds icon file')
+        kind = data[at + 4:at + 8]
+        body = data[at + 8:at + 8 + size]
+        crc, = struct.unpack_from('>I', data, at + 8 + size)
+        if not re.fullmatch(b'[A-Za-z]{4}', kind) or zlib.crc32(kind + body) & 0xffffffff != crc:
+            raise ValueError('invalid PNG chunk type/CRC')
+        if count == 1 and (kind != b'IHDR' or size != 13):
+            raise ValueError('PNG must begin with its13-byte IHDR')
+        if kind == b'IHDR':
+            if count != 1:
+                raise ValueError('duplicate PNG IHDR')
+            width, height, depth, color, compression, filtering, interlace = struct.unpack('>IIBBBBB', body)
+            if (width, height) != (512, 512) or depth != 8 or color not in (2, 6) or compression or filtering or interlace:
+                raise ValueError('app icon must be512x512 noninterlaced8-bit RGB/RGBA PNG')
+            channels = 3 if color == 2 else 4
+        elif kind == b'IDAT':
+            compressed.extend(body)
+        elif kind == b'IEND':
+            if size != 0 or at + 12 != len(data):
+                raise ValueError('invalid PNG IEND/trailing bytes')
+            ended = True
+            break
+        elif kind[0] < ord('a') and kind != b'PLTE':
+            raise ValueError('unsupported critical PNG chunk')
+        at += size + 12
+    if not ended or not compressed:
+        raise ValueError('PNG icon lacks IDAT/IEND')
+    expected = height * (1 + width * channels)
+    decoder = zlib.decompressobj()
+    pixels = decoder.decompress(compressed, expected + 1)
+    if len(pixels) != expected or not decoder.eof or decoder.unused_data or decoder.unconsumed_tail:
+        raise ValueError('invalid or oversized PNG pixel stream')
+    if any(pixels[y * (1 + width * channels)] > 4 for y in range(height)):
+        raise ValueError('invalid PNG scanline filter')
+    return dict(width=width, height=height, channels=channels, bytes=len(data), sha256=hashlib.sha256(data).hexdigest())
 
 
 def image(path, sections=True):
@@ -180,9 +234,12 @@ def main():
             title = value.get('titleId')
             if not isinstance(title, str) or not re.fullmatch(r'[A-Z]{4}[0-9]{5}', title):
                 raise ValueError('explicit metadata must carry a valid owner-selected titleId')
+            png_icon(plain(folder / 'sce_sys/icon0.png'))
             for relative in ('sce_sys/param.json', 'sce_sys/icon0.png', 'sce_sys/pic0.dds', 'sce_sys/pic1.dds', 'icon0.png'):
                 source = plain(folder / relative)
-                if source.is_file(): metadata.append((source, Path(relative)))
+                if source.is_file():
+                    if relative.endswith('icon0.png'): png_icon(source)
+                    metadata.append((source, Path(relative)))
         for source in (elf, receipt_path, converter, *(p for p, _ in metadata)):
             if out == source or source.is_relative_to(out) or out.is_relative_to(source):
                 raise ValueError('final output overlaps an input')
@@ -207,6 +264,7 @@ def main():
             target.parent.mkdir(parents=True, exist_ok=True)
             with source.open('rb') as incoming, target.open('xb') as outgoing:
                 shutil.copyfileobj(incoming, outgoing, 1024 * 1024)
+            if relative.as_posix().endswith('icon0.png'): png_icon(target)
         # Preserve rights/credit in the local artifact; no game files are copied.
         for source in (ROOT / 'LICENSE', ROOT / 'platform/ps5/app/LICENSE'):
             target = out / 'legal' / ('PSXS5-GPL-3.0.txt' if source.parent.name == 'app' else 'SC2-GPL-3.0.txt')

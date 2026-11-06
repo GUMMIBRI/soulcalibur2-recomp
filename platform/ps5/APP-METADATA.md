@@ -60,3 +60,23 @@ SHA readback, new parameter upload and exact parameter SHA readback, with
 state usb-metadata-verified. Eboot was not replaced. Parent reports no app
 installation or launch; controller, rendering, audio and gameplay still await
 human testing. Metadata presence alone establishes none of those behaviors.
+
+## Missing-icon installation failure
+
+The later human installation attempt reported ShadowMount `[COPY] Failed to
+copy staged icon /sce_sys/icon0.png`, followed by its retry limit (2/2).
+The earlier parameter-only receipt verifies the uploaded JSON bytes; it does
+not establish a complete installable metadata set or a successful launch.
+
+New finalizations supplying param.json require sce_sys/icon0.png. Admission
+checks the PNG signature, chunk structure and CRCs, 512x512 dimensions, RGB/RGBA
+scanlines and successful bounded decompression. Packaging rechecks the icon;
+an optional root icon0.png cannot replace the required sce_sys icon. Historical
+receipts are preserved rather than retroactively claiming they included it.
+The original local icon validated at SHA256
+4601b17e99c7b5d75d87695b1e5e3b71d235470be77ac38dd77bf61e9048000f.
+
+A failed installer may retain staging/retry state. Adding the missing source
+icon alone does not prove that state was cleared or that a retry succeeded.
+Any scoped recovery and further installation remain with the project lead and
+human tester; this validation performs no console calls or cache deletion.

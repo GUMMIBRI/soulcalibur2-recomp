@@ -146,7 +146,7 @@ def finalized_app(receipt_path, selected=None):
     executable = checked_record(value["self"], expected)
     if selected is not None and plain_path(selected) != executable:
         raise ValueError("--eboot must select the exact recorded finalized eboot.bin")
-    from ps5_finalize_payload import CONVERTER_SHA256
+    from ps5_finalize_payload import CONVERTER_SHA256, png_icon
     converter = checked_record(value["converter"])
     if digest(converter) != CONVERTER_SHA256:
         raise ValueError("finalization selected another unreviewed SELF converter")
@@ -173,7 +173,13 @@ def finalized_app(receipt_path, selected=None):
         record = item["source"]
         if not source.is_file() or source.stat().st_size != record["bytes"] or digest(source) != record["sha256"]:
             raise ValueError("finalized PlayStation metadata changed: " + str(relative))
+        if relative.as_posix().endswith("icon0.png"):
+            png_icon(source)
         metadata.append((source, relative))
+    selected_metadata = {relative.as_posix() for _, relative in metadata}
+    if value.get("metadata_supplied") or "sce_sys/param.json" in selected_metadata:
+        if not {"sce_sys/param.json", "sce_sys/icon0.png"}.issubset(selected_metadata):
+            raise ValueError("application metadata needs both sce_sys/param.json and a valid512x512 sce_sys/icon0.png")
     # Preserve the finalizer's exact rights/credit files; never collect its logs,
     # unconverted program, private receipts or unrelated files into the app.
     for relative in ("legal/SC2-GPL-3.0.txt", "legal/PSXS5-GPL-3.0.txt", "legal/PSXS5-SOURCE.json", "RELEASE-ENDNOTE.md"):
