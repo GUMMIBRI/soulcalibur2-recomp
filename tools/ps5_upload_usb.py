@@ -57,8 +57,8 @@ def relative(value):
         raise ValueError('only the exact SC2 app child is permitted under homebrew')
     if parts[0] == 'homebrew' and len(parts) > 2 and parts[2].casefold() in {
             'storage', 'saves', 'settings.ini', 'startup.log', 'shader-requests', 'shader-cache',
-            'driver-cache', 'cache', '.mesa-streams', 'screenshots'}:
-        raise ValueError('active saves/config/cache must never be shipped')
+            'driver-cache', 'cache', '.mesa-streams', 'screenshots', 'reports'}:
+        raise ValueError('active saves/config/cache/reports must never be shipped')
     if value.lower().endswith('.iso') and value != 'soulcalibur2/game files/Soulcalibur II (USA).iso':
         raise ValueError('donor ISO is not an upload asset')
     return PurePosixPath(value)
@@ -434,7 +434,7 @@ def main():
             raise ValueError('transfer receipt/scratch must be outside the immutable package tree')
         # Validate target endpoint even for a local plan, but perform no network I/O.
         wfm = Wfm(args.server)
-        report = dict(schema='sc2.usb-transfer.v1', manifest_sha256=args.manifest_sha256, destination=destination,
+        report = dict(schema='sc2.usb-transfer.v1', build_identity=manifest.get("build_identity"), manifest_sha256=args.manifest_sha256, destination=destination,
                       files=len(files), uncompressed_bytes=total, execute=args.execute, mode=args.mode, uploaded=False,
                       verification_requested=args.verify, manifest_path=str(plain(args.manifest)),
                       local_eboot_identity=next(dict(path=destination + '/' + row['path'], bytes=row['bytes'], sha256=row['sha256']) for row in files if row['path'] == 'homebrew/Soulcalibur II/eboot.bin'),

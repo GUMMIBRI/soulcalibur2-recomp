@@ -278,6 +278,7 @@ def main():
     parser.add_argument("--sdl", type=Path, required=True, help="GPU-enabled SDL3 prefix")
     parser.add_argument("--radv", type=Path, required=True, help="PS5 RADV release prefix")
     parser.add_argument("--sdk", type=Path, required=True, help="public PS5 SDK used for host compilation")
+    parser.add_argument("--build-label", default="sc2-ps5", help="human label for artifact-bound startup reporting")
     parser.add_argument("--eboot-dir", help="explicit application install root matching runner/startup compilation")
     parser.add_argument("--guest-receipt", type=Path, help="authenticated ps5_compile_guest.py object receipt")
     parser.add_argument("--xbe", type=Path, help="supported owned executable, read in place for guest receipt validation")
@@ -398,13 +399,14 @@ def main():
             units.append(ROOT / "private/ps5-host-objects/sc2_ps5_startup.o")
             units.append(ROOT / "private/ps5-host-objects/sc2_ps5_posix.o")
             units.append(ROOT / "private/ps5-host-objects/sc2_ps5_cpp_diagnostics.o")
+            units.append(ROOT / "private/ps5-host-objects/sc2_ps5_fault.o")
             derived_libc, transform_inputs, libc_transform = application_libc(args.sdk, args.llvm)
             archives = [derived_libc if path == sdk_lib / "libc.a" else path for path in archives]
         except (ValueError, OSError) as error:
             parser.error(str(error))
         app_inputs = [ROOT / ("platform/ps5/app/" + name) for name in
                       ("app_crt.cpp", "ps5-pie.ld", "ps5-pie-unwind.ld", "app-symbols.map", "SOURCE.json")]
-        app_inputs.extend([ROOT / "runtime/sc2_ps5_startup.c", ROOT / "runtime/sc2_ps5_posix.c", ROOT / "runtime/sc2_ps5_cpp_diagnostics.cpp", *transform_inputs])
+        app_inputs.extend([ROOT / "runtime/sc2_ps5_startup.c", ROOT / "runtime/sc2_ps5_posix.c", ROOT / "runtime/sc2_ps5_cpp_diagnostics.cpp", ROOT / "runtime/sc2_ps5_fault.c", *transform_inputs])
     if args.title_heap:
         try:
             title_archive, title_inputs, title_heap_transform = application_title_heap(args.title_heap_library, args.llvm)
@@ -434,7 +436,7 @@ def main():
                 raise ValueError(f"object is not compiled for the selected PS5 target: {obj}")
             if Path(row["compiler"]).resolve().parent != args.llvm.resolve():
                 raise ValueError(f"object was compiled with another LLVM installation: {obj}")
-            if args.application and obj.stem in ("sc2_ps5_posix", "sc2_ps5_cpp_diagnostics") and "-DSC2_PS5_APPLICATION=1" not in row["command"]:
+            if args.application and obj.stem in ("sc2_ps5_posix", "sc2_ps5_cpp_diagnostics", "sc2_ps5_fault") and "-DSC2_PS5_APPLICATION=1" not in row["command"]:
                 raise ValueError("application service/diagnostic adapter must be compiled in its application-only group")
             if args.application and obj.stem in ("runner", "sc2_ps5_startup", "sc2_ps5_posix"):
                 root_define = "-DSC2_PS5_INSTALL_ROOT=" + json.dumps(args.eboot_dir)
@@ -530,9 +532,36 @@ def main():
         if not layout.is_file():
             parser.error(f"missing public SDK linker layout: {layout}")
         command.extend(["-T", layout, "--eh-frame-hdr"])
+    build_identity = None
+    if args.application:
+        from ps5_build_identity import make_manifest, token_for, compile_identity
+        commit_result = run(["git", "rev-parse", "HEAD"])
+        commit = commit_result.stdout.strip() if commit_result.returncode == 0 else "unknown"
+        frozen_paths = [*units, sdl, radv, *radv_inputs, *archives, *imports, *crt_inputs, *app_inputs,
+                        ROOT / "tools/ps5_link_gpu.py", ROOT / "tools/ps5_build_identity.py", linker,
+                        args.llvm / ("clang" + suffix)]
+        frozen = [dict(path=str(path.resolve()), sha256=digest(path)) for path in frozen_paths]
+        manifest = make_manifest(frozen, [str(arg) for arg in command], args.build_label, commit)
+        identity_object, build_identity, identity_inputs = compile_identity(
+            manifest, args.sdk, args.llvm, ROOT / "private/ps5-build-identities" / token_for(manifest))
+        identity_row = json.loads(identity_object.with_suffix(".object.json").read_text())
+        validate_object(identity_row, args.sdk)
+        units.append(identity_object)
+        object_records.append(identity_row)
+        app_inputs.extend(identity_inputs)
+        command.insert(command.index("--start-group") + 1, identity_object)
     done = run(command)
     shape_error = None
-    if executable_mode and done.returncode == 0:
+    if args.application and done.returncode == 0:
+        try:
+            from ps5_build_identity import bind_identity
+            for frozen in build_identity["manifest"]["inputs"]:
+                if digest(Path(frozen["path"])) != frozen["sha256"]:
+                    raise ValueError("build identity input changed during link: " + frozen["path"])
+            build_identity = bind_identity(linked, build_identity)
+        except (ValueError, OSError) as error:
+            shape_error = str(error)
+    if executable_mode and done.returncode == 0 and shape_error is None:
         try:
             if args.application:
                 from ps5_finalize_payload import preflight
@@ -586,6 +615,7 @@ def main():
                    fully_linked=executable_mode and link_success and not remaining,
                    title_heap=title_heap_transform,
                    application_abort_wrap=abort_wrap,
+                   application_build_identity=build_identity,
                    radv_whole_archive=args.application,
                    application_radv_transform=radv_transform,
                    required_vulkan_providers=required_vulkan_providers,

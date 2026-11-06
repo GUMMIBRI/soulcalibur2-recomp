@@ -24,7 +24,9 @@ Architecture migrations require evidence and an approved plan.
 Console: app /mnt/usbN/homebrew/Soulcalibur II, assets /mnt/usbN/soulcalibur2.
 Preserve saves, settings, assets and recovery journals. Numeric USB app roots
 only; /data assets are read-only. No internal writes, permissions changes,
-cache clearing, deletion, autonomous launching, gameplay or reboot. Obtain
+cache clearing, autonomous launching, gameplay or reboot. Deletion is limited
+to the owner-authorized cleanup of complete, locally preserved diagnostic
+logs after collection; preserve active/changing logs, caches and saves. Obtain
 fresh games-closed confirmation before replacing an installed eboot. If a
 specific future overwrite/deletion is necessary, resolve its authorization
 against the owner's current instructions before execution.

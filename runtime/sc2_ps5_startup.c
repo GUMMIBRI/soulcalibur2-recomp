@@ -15,11 +15,18 @@
 extern int sceKernelOpen(const char *path, int flags, mode_t mode);
 extern int64_t sceKernelWrite(int descriptor, const void *buffer, size_t length);
 extern int sceKernelClose(int descriptor);
+extern int sceKernelMkdir(const char *path, mode_t mode);
+extern uint64_t sceKernelGetProcessTimeCounter(void);
+extern const char sc2_ps5_build_id[] __attribute__((weak));
+extern void *__real_malloc(size_t bytes);
 extern void _start(void *parameters, void (*loader_teardown)(void)) __attribute__((noreturn));
 
 static const char sc2_startup_root[] = SC2_PS5_INSTALL_ROOT;
 static const char sc2_startup_path[] = SC2_PS5_INSTALL_ROOT "/startup.log";
 static unsigned sc2_startup_sequence;
+static int sc2_run_descriptor = -1;
+static char sc2_run_path[512];
+static const char sc2_report_directory[] = SC2_PS5_INSTALL_ROOT "/reports";
 
 static int sc2_prefix(const char *value, const char *prefix)
 {
@@ -52,6 +59,66 @@ static int sc2_root_allowed(void)
         !(component == 2 && root[i - 1] == '.' && root[i - 2] == '.');
 }
 
+/* Never overwrite a previous run. A native counter plus O_EXCL resolves
+   collisions even if the counter resets across process launches. All output
+   stays inside the compiled app folder. No libc/heap or directory listing. */
+static void sc2_write_all(int fd, const char *data, size_t size)
+{
+    size_t at = 0;
+    while (at < size) {
+        const int64_t wrote = sceKernelWrite(fd, data + at, size - at);
+        if (wrote <= 0 || (uint64_t)wrote > size - at) break;
+        at += (size_t)wrote;
+    }
+}
+static size_t sc2_append_text(char *out, size_t at, const char *text)
+{
+    while (*text && at + 1 < sizeof sc2_run_path) out[at++] = *text++;
+    out[at] = 0;
+    return at;
+}
+static size_t sc2_append_hex(char *out, size_t at, uint64_t value, unsigned digits)
+{
+    while (digits && at + 1 < sizeof sc2_run_path) {
+        --digits;
+        out[at++] = "0123456789abcdef"[(value >> (digits * 4)) & 15];
+    }
+    out[at] = 0;
+    return at;
+}
+static int sc2_begin_run_report(void)
+{
+    int directory;
+    unsigned attempt;
+    const uint64_t counter = sceKernelGetProcessTimeCounter();
+    if (!sc2_root_allowed()) return 0;
+    /* A failed mkdir is not interpreted as success: prove the directory. */
+    (void)sceKernelMkdir(sc2_report_directory, (mode_t)0700);
+    directory = sceKernelOpen(sc2_report_directory, O_RDONLY | O_DIRECTORY | O_NOFOLLOW, 0);
+    if (directory < 0) return 0;
+    if (sceKernelClose(directory) < 0) return 0;
+    for (attempt = 0; attempt < 256; ++attempt) {
+        size_t at = sc2_append_text(sc2_run_path, 0, sc2_report_directory);
+        at = sc2_append_text(sc2_run_path, at, "/run-");
+        at = sc2_append_hex(sc2_run_path, at, counter, 16);
+        at = sc2_append_text(sc2_run_path, at, "-");
+        at = sc2_append_hex(sc2_run_path, at, attempt, 2);
+        (void)sc2_append_text(sc2_run_path, at, ".log");
+        sc2_run_descriptor = sceKernelOpen(sc2_run_path,
+            O_WRONLY | O_CREAT | O_EXCL | O_APPEND | O_NOFOLLOW, (mode_t)0600);
+        if (sc2_run_descriptor >= 0) {
+            static const char header[] = "SC2 per-run report v1; end without shutdown marker is not a diagnosed cause\n";
+            sc2_write_all(sc2_run_descriptor, header, sizeof header - 1);
+            return 1;
+        }
+        /* Only an actual native EEXIST warrants trying another fresh name. */
+        if ((uint32_t)sc2_run_descriptor != 0x80020011u) break;
+    }
+    sc2_run_descriptor = -1;
+    sc2_run_path[0] = 0;
+    return 0;
+}
+
 /* Only kernel calls and stack/scalar data, safe before CRT initialization.
    One bounded record is appended per stage; logging failure never stops boot. */
 __attribute__((visibility("default"))) void sc2_ps5_log_stage(const char *stage)
@@ -70,6 +137,7 @@ __attribute__((visibility("default"))) void sc2_ps5_log_stage(const char *stage)
     for (i = 0; i < 512 && stage[i]; ++i)
         record[used++] = stage[i] == '\n' || stage[i] == '\r' ? ' ' : stage[i];
     record[used++] = '\n';
+    if (sc2_run_descriptor >= 0) sc2_write_all(sc2_run_descriptor, record, used);
     fd = sceKernelOpen(sc2_startup_path, O_WRONLY | O_CREAT | O_APPEND | O_NOFOLLOW, (mode_t)0600);
     if (fd < 0) return;
     for (i = 0; i < used;) {
@@ -78,6 +146,37 @@ __attribute__((visibility("default"))) void sc2_ps5_log_stage(const char *stage)
         i += (size_t)done;
     }
     (void)sceKernelClose(fd);
+}
+
+/* Fault handling uses only this preopened sink. No open, allocation,
+   formatting runtime, unwinding or instruction-memory reads in the handler. */
+int sc2_ps5_fault_sink_ready(void) { return sc2_run_descriptor >= 0; }
+void sc2_ps5_write_fault_line(const char *text, size_t length)
+{
+    char line[524], digits[10];
+    size_t used = 0, count = 0, at;
+    unsigned sequence;
+    if (sc2_run_descriptor < 0 || !text) return;
+    sequence = __atomic_add_fetch(&sc2_startup_sequence, 1u, __ATOMIC_RELAXED);
+    do { digits[count++] = (char)('0' + sequence % 10); sequence /= 10; } while (sequence);
+    while (count) line[used++] = digits[--count];
+    line[used++] = ' ';
+    if (length > 512) length = 512;
+    for (at = 0; at < length; ++at)
+        line[used++] = text[at] == '\n' || text[at] == '\r' ? ' ' : text[at];
+    line[used++] = '\n';
+    sc2_write_all(sc2_run_descriptor, line, used);
+}
+
+/* Record pointer values only. Never read instructions in PS5 execute-only
+   text to identify a module. Imported anchors can help compare crash ranges. */
+static void sc2_log_address(const char *label, uintptr_t address)
+{
+    char line[512];
+    size_t at = sc2_append_text(line, 0, label);
+    at = sc2_append_text(line, at, "=0x");
+    (void)sc2_append_hex(line, at, (uint64_t)address, 16);
+    sc2_ps5_log_stage(line);
 }
 
 /* This marker runs when the licensed CRT enters its constructor array. It
@@ -104,6 +203,12 @@ void catchReturnFromMain(int status)
 __attribute__((noreturn, visibility("default")))
 void sc2_ps5_start(void *parameters, void (*loader_teardown)(void))
 {
+    const int per_run = sc2_begin_run_report();
     sc2_ps5_log_stage("application entry before CRT");
+    sc2_ps5_log_stage(per_run ? sc2_run_path : "per-run report unavailable; startup.log fallback active");
+    sc2_ps5_log_stage(sc2_ps5_build_id ? sc2_ps5_build_id : "SC2 build-id: legacy/unembedded");
+    sc2_log_address("anchor app entry", (uintptr_t)&sc2_ps5_start);
+    sc2_log_address("anchor libkernel open", (uintptr_t)&sceKernelOpen);
+    sc2_log_address("anchor libc malloc", (uintptr_t)&__real_malloc);
     _start(parameters, loader_teardown);
 }

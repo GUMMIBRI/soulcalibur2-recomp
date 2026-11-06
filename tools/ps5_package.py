@@ -168,6 +168,12 @@ def finalized_app(receipt_path, selected=None):
     linked = link.get("output") or link.get("elf")
     if not linked or checked_record(linked) != original:
         raise ValueError("application link selects a different ELF")
+    if value.get('build_identity') or link.get('application_build_identity'):
+        from ps5_build_identity import validate_identity
+        if value.get('build_identity') != link.get('application_build_identity'):
+            raise ValueError('finalization build identity differs from linked executable')
+        validate_identity(original, value['build_identity'])
+        validate_identity(plain_path(receipt_path.parent / "eboot.elf"), value['build_identity'])
     metadata = []
     companion = checked_record(value['loader_companion'], plain_path(receipt_path.parent / 'sce_module/libc.prx'))
     if companion.stat().st_size != 1284674 or digest(companion) != COMPANION_SHA256:
@@ -371,7 +377,7 @@ def package(args):
     finalized_app(receipt_path, executable)
     if digest(guests) != guest_receipt["output_sha256"]:
         raise ValueError("guest roster changed during packaging")
-    value = dict(format="SC2-PRIVATE-PACKAGE-4", asset_mode=args.asset_mode, disc_mode=args.disc_mode,
+    value = dict(format="SC2-PRIVATE-PACKAGE-4", build_identity=finalization.get("build_identity"), asset_mode=args.asset_mode, disc_mode=args.disc_mode,
                  files=manifest, finalization_sha256=digest(receipt_path),
                  original_xbe_sha256=disc["xbe_sha256"], guest_roster_sha256=guest_receipt["output_sha256"],
                  source_disc=dict(kind="extracted" if disc["source"].is_dir() else "iso",

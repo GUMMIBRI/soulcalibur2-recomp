@@ -350,7 +350,7 @@ def main():
     names = (KERNEL_SOURCES if args.group == "kernel" else ("runner.cpp",) if args.group == "runner"
              else ("sc2_ps5_startup.c",) if args.group == "startup" else
              ("sc2_ps5_posix.c",) if args.group == "posix" else
-             ("sc2_ps5_cpp_diagnostics.cpp",) if args.group == "cpp-diagnostics" else
+             ("sc2_ps5_cpp_diagnostics.cpp", "sc2_ps5_fault.c") if args.group == "cpp-diagnostics" else
              ADAPTER_SOURCES if args.group == "adapters" else game_sources() if args.group == "game" else SOURCES)
     sources = [merged / name for name in names]
     if args.group == "title-heap":

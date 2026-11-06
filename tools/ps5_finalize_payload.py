@@ -229,6 +229,10 @@ def main():
         if not stubdir.is_dir() or not nm.is_file():
             raise ValueError('existing public SDK import directory and LLVM nm required')
         original = preflight(elf, nm)
+        build_identity = receipt.get('application_build_identity')
+        if build_identity:
+            from ps5_build_identity import validate_identity
+            validate_identity(elf, build_identity)
         from ps5_audit_syscalls import audit_syscalls
         decoder = llvm / ('llvm-objdump.exe' if __import__('os').name == 'nt' else 'llvm-objdump')
         syscall_audit = audit_syscalls(elf, decoder)
@@ -268,6 +272,8 @@ def main():
         converted, self_file = out / 'eboot.elf', out / 'eboot.bin'
         run('convert', [str(converter), 'link', '--in', str(elf), '--out', str(converted), '--stub-dir', str(stubdir), '--file-name', 'eboot.elf'])
         sections = retained(original, converted)
+        if build_identity:
+            validate_identity(converted, build_identity)
         run('self', [str(converter), 'self', '--sign', '--in', str(converted), '--out', str(self_file)])
         inspection = run('inspect', [str(converter), 'self', '--inspect', '--file', str(self_file)])
         if not re.search(r'^integrity:\s*valid\s*$', inspection, re.M):
@@ -300,6 +306,7 @@ def main():
                       metadata_supplied=bool(args.metadata), metadata=[dict(path=str(r), source=record(p)) for p, r in metadata],
                       loader_companion=record(out / 'sce_module/libc.prx'),
                       syscall_audit=syscall_audit,
+                      build_identity=build_identity,
                       platform_notices=platform_notices,
                       application_linked=True, console_executed=False, installed=False, gameplay_verified=False)
         (out / 'FINALIZATION.json').write_text(json.dumps(result, indent=2) + '\n')

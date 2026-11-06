@@ -16,15 +16,22 @@ runners, overlapping mutable files, repeated unchanged builds or filler work.
 ## Boot lane
 
 Installed candidate remains radv-dispatch-r1, source c4195d4. Its upload receipt
-and exact executable are authoritative. Latest downloaded startup log predates
-that upload, so a new runtime result is unknown. No further console mutation
-or autonomous launch is authorized by this queue. Fresh games-closed state
-is required for the next deployment.
+and exact executable are authoritative. Fresh intro-start-crash.log postdates
+upload and both newest attempts pass save recovery, device/display/swapchain,
+shader modules and GPU queue submissions. Owner confirms intro video playback,
+then Start crash and a crash on second launch. Exact faulting function remains
+unknown pending full thread/backtrace/module data; do not clear caches or infer
+a save-init regression.
 
-The code-review batch strengthens callable-provider admission without changing
-the installed artifact. It must not be reported as another PS5-tested build.
-Next actual milestone: current build identity confirmed in fresh execution,
-SDL display/device creation, then shader provisioning and first game frame.
+The callable-provider admission hardening and build-identity helper did not
+change this executable. The helper is unintegrated. A separate native undo
+reader patch is source-only and independently reviewed, not the current crash
+cause or a delivered fix. Do not blend it into a crash candidate blindly.
+
+Next milestone: localize the Start-transition/relaunch fault, then reach menu
+and interactive gameplay. Human complete backtrace requested, no new launch.
+The requested copy-ready handoff is HANDOFF-PROMPT-20261106.txt, intentionally
+excluded from public Git because it includes private diagnostic references.
 
 ## Expansion lane
 

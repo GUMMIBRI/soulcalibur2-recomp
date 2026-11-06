@@ -26,7 +26,7 @@ completed. Compilation alone never establishes completion. Updated November6,202
 - Intended behavior: Reliable boot/package, DualSense mapping/vibration, local multiplayer and graphics settings.
 - Dependencies and risks: Native SDK/driver/thread/libc constraints; human runtime qualification.
 - Sources and references: AGENTS.md; BUILD_HISTORY.md; platform/ps5/
-- Acceptance criteria and evidence: Reach menu and interactive local fight, then validate controllers/settings/relaunch. Current build installed; successful boot unconfirmed.
+- Acceptance criteria and evidence: Reach menu and interactive local fight, then validate controllers/settings/relaunch. Owner reaches intro, menus, Arcade character select and three Team Versus selections on some runs; intermittent crashes remain and fights/reliable relaunch are unconfirmed.
 
 ### FR-016 — Graphics and HD assets
 
@@ -35,7 +35,7 @@ completed. Compilation alone never establishes completion. Updated November6,202
 - Intended behavior: FSR,1x–8x internal resolution, HD textures, widescreen/fullscreen and stable pacing. Compare HD models, effects, lighting and rendering improvements across recompilation projects.
 - Dependencies and risks: Boot/render baseline first; scaling cost, shader correctness and PS2/GC/Spawn texture mappings.
 - Sources and references: runtime/sc2_fsr.cpp; runtime/d3d_presenter_sdl_gpu.cpp; textures layout
-- Acceptance criteria and evidence: PS5 images and measured pacing at selected settings; code/assets exist but no rendered gameplay is confirmed.
+- Acceptance criteria and evidence: PS5 images and measured pacing at selected settings; code/assets exist and intro rendering is confirmed; gameplay, FSR and scaling modes remain unqualified.
 
 ## Content expansion
 
