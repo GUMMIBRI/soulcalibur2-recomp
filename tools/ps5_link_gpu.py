@@ -51,6 +51,75 @@ def run(command):
                           text=True, errors="replace")
 
 
+
+def required_callable_providers(elf, required):
+    """Admit real ELF functions mapped into stored executable LOAD bytes.
+
+    A defined name alone also admits data and absolute aliases. Inspect the
+    actual symbol type, defining section and mapping instead; undefined weak
+    dispatch references must never satisfy a required callable provider.
+    """
+    import struct
+    from ps5_finalize_payload import image
+    obj = image(Path(elf))
+    sections, data = obj['sections'], obj['data']
+    wanted = set(required)
+    found, rejected = {}, {name: set() for name in wanted}
+    for table in sections:
+        if table['type'] not in (2, 11):  # SHT_SYMTAB / SHT_DYNSYM
+            continue
+        if table['entsize'] != 24 or table['size'] % 24 or table['link'] >= len(sections):
+            raise ValueError('invalid callable-provider symbol table')
+        strings = sections[table['link']]
+        if strings['type'] != 3:
+            raise ValueError('callable-provider symbol table lacks a string table')
+        names = data[strings['offset']:strings['offset'] + strings['size']]
+        for at in range(table['offset'], table['offset'] + table['size'], 24):
+            name_at, info, _, section_index, address, size = struct.unpack_from('<IBBHQQ', data, at)
+            if name_at >= len(names):
+                raise ValueError('callable-provider symbol name exceeds string table')
+            end = names.find(b'\0', name_at)
+            if end < 0:
+                raise ValueError('unterminated callable-provider symbol name')
+            name = names[name_at:end].decode('utf-8', errors='replace')
+            if name not in wanted:
+                continue
+            reason = None
+            if not 0 < section_index < len(sections):
+                reason = 'undefined or non-section symbol'
+            elif info & 15 != 2:  # STT_FUNC
+                reason = 'symbol is not STT_FUNC'
+            elif not address:
+                reason = 'function address is zero'
+            else:
+                section = sections[section_index]
+                extent = max(size, 1)
+                if not section['flags'] & 4 or not (
+                        section['address'] <= address and
+                        address + extent <= section['address'] + section['size']):
+                    reason = 'function is outside its executable section'
+                elif not any(program['type'] == 1 and program['flags'] & 1 and
+                             program['address'] <= address and
+                             address + extent <= program['address'] + program['size']
+                             for program in obj['programs']):
+                    reason = 'function is not mapped by a stored executable LOAD'
+            if reason:
+                rejected[name].add(reason)
+                continue
+            record = dict(name=name, address=address, address_hex=hex(address),
+                          symbol_type='FUNC', bytes=size, section=section['name'],
+                          executable_load=True)
+            if name in found and found[name] != record:
+                raise ValueError('ambiguous callable-provider definitions: ' + name)
+            found[name] = record
+    missing = [name for name in required if name not in found]
+    if missing:
+        details = [name + ' (' + ', '.join(sorted(rejected[name]) or ['no symbol']) + ')'
+                   for name in missing]
+        raise ValueError('RADV required callable providers invalid: ' + '; '.join(details))
+    return [found[name] for name in required]
+
+
 def application_crt(sdk, llvm):
     """Compile/reuse the licensed native application entry, never payload CRT."""
     source = ROOT / "platform/ps5/app/app_crt.cpp"
@@ -474,12 +543,12 @@ def main():
         except (ValueError, OSError, subprocess.SubprocessError) as error:
             shape_error = str(error)
     required_vulkan_providers = ["vk_common_GetPhysicalDeviceProperties2"]
+    required_vulkan_provider_records = []
     if args.application and done.returncode == 0 and shape_error is None:
-        defined = run([nm, "--defined-only", "--just-symbol-name", linked])
-        found = set(defined.stdout.splitlines())
-        missing_vulkan = [name for name in required_vulkan_providers if name not in found]
-        if defined.returncode or missing_vulkan:
-            shape_error = "RADV required callable providers omitted: " + ", ".join(missing_vulkan)
+        try:
+            required_vulkan_provider_records = required_callable_providers(linked, required_vulkan_providers)
+        except (ValueError, OSError) as error:
+            shape_error = str(error)
     link_success = done.returncode == 0 and shape_error is None
     log_name = "application-link.log" if args.application else "payload-link.log" if args.payload else "strict-runner-link.log" if args.full_runner and args.strict_shared else "strict-link.log" if args.strict_shared else "link.log"
     (out / log_name).write_text(done.stdout + done.stderr + ("\nApplication/ELF preflight failed: " + shape_error if shape_error else ""), encoding="utf-8")
@@ -520,6 +589,7 @@ def main():
                    radv_whole_archive=args.application,
                    application_radv_transform=radv_transform,
                    required_vulkan_providers=required_vulkan_providers,
+                   required_vulkan_provider_records=required_vulkan_provider_records,
                    application_abi="sc2.ps5-application.v1" if args.application else None,
                    application_libc_transform=libc_transform,
                    application_entry="sc2_ps5_start" if args.application else None,
