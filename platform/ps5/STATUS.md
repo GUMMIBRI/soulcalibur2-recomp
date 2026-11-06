@@ -11,9 +11,18 @@ Private finalization: private/ps5-app-test-20261105/FINALIZATION.json.
 Private package: private/ps5-usb-test-20261105/PACKAGE-MANIFEST.json (4450files,
 2365211736bytes). Extracted game files include the single converted all-exclusive
 root, music, movies and authenticated XBE; no GC/PS2 donorISO is installed.
-USB-only owner-authorized transfer to192.168.1.23:8888 is in progress; actual
-receipt private/ps5-upload-run/UPLOAD-20261105.json is authoritative. Games were
-confirmed closed. No internal install or autonomous launch is authorized.
+USB-only owner-authorized direct transfer to192.168.1.23:8888 PASSED:
+private/ps5-upload-run/FILES-UPLOAD-20261105.json. All4450 file sizes and
+directories matched; eboot, authenticated XBE and converted roster readback
+SHA256 matched. App is /mnt/usb0/Soulcalibur II/eboot.bin; assets are
+/mnt/usb0/soulcalibur2. The archive helper was unavailable, so the direct-file
+protocol was used without starting it. Games were confirmed closed. Launcher
+metadata supplement also passed: private/ps5-upload-run/METADATA-UPLOAD-20261105.json.
+Original sce_sys/param.json uses provisional homebrew identity PPSA77024 and
+was SHA256 readback verified with the eboot unchanged. No extra libc.prx is
+required by the actual11 system-library dependencies. Launcher discovery or
+registration depends on the user's launcher; no internal install, launch or
+gameplay qualification follows from USB delivery.
 Earlier missing-input/guest-link checkpoints below are historical.
 
 LATEST service batch:120 distinct real objects compiled atO2 with dependency
