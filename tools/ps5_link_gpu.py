@@ -221,6 +221,12 @@ def main():
     linker = args.llvm / ("ld.lld" + suffix)
     nm = args.llvm / ("llvm-nm" + suffix)
     sdl = args.sdl / "lib/libSDL3.a"
+    if args.application and args.full_runner:
+        if digest(sdl) != "0acbbede2b256cce605dfaa788b3ce1d9989588dad61426b2014a685a63f5dbf":
+            parser.error("SC2 PS5 requires the reviewed SDL PS5 RADV policy archive")
+        if digest(args.sdl / "include/SDL3/SDL_gpu.h") != "0e5f8278450744845bd0e293a8e7480c379cbf90cc910cf17481346ccbe7be04":
+            parser.error("SC2 PS5 SDL GPU header differs from the reviewed archive ABI")
+
     radv = args.radv / "lib/libvulkan_radeon.ps5.a"
     sdk_lib = args.sdk.resolve() / "target/lib"
     archives = [sdk_lib / name for name in (
@@ -399,7 +405,7 @@ def main():
     if args.full_runner:
         command.append("--error-limit=0")
     if args.title_heap:
-        command += ["--wrap=" + symbol for symbol in (*TITLE_HEAP_WRAPS, *TITLE_HEAP_GUARDS)]
+        command += ["--wrap=" + symbol for symbol in (*TITLE_HEAP_WRAPS, *TITLE_HEAP_GUARDS, "pthread_create", "pthread_join", "pthread_detach")]
     crt_inputs = []
     if args.application:
         app = ROOT / "platform/ps5/app"

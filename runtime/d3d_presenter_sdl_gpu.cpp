@@ -59,6 +59,19 @@ static const unsigned char kSmaaSource[] = {
 };
 #endif
 
+#if defined(SC2_PS5)
+extern "C" void ps5_fp_ieee(void);
+static void sc2SDLLog(void *, int, SDL_LogPriority, const char *message)
+{
+    static unsigned busy;
+    if (__atomic_exchange_n(&busy, 1u, __ATOMIC_ACQUIRE)) return;
+    const int saved = errno;
+    if (sc2_ps5_log_stage && message) sc2_ps5_log_stage(message);
+    errno = saved;
+    __atomic_store_n(&busy, 0u, __ATOMIC_RELEASE);
+}
+#endif
+
 namespace {
 
 constexpr uint32_t kTextureSlots = 4096u;
@@ -3339,6 +3352,12 @@ RecompD3dPresenterError d3d_backend_create(const RecompD3dPresenterConfig *confi
     }
     if (*presenter != nullptr || active_presenter != nullptr) return RECOMP_D3D_PRESENTER_ALREADY_INITIALIZED;
     if (!recomp_shader_compiler_available()) return RECOMP_D3D_PRESENTER_HOST_FAILURE;
+#if defined(SC2_PS5)
+    ps5_fp_ieee();
+    SDL_SetLogOutputFunction(sc2SDLLog, nullptr);
+    SDL_SetLogPriorities(SDL_LOG_PRIORITY_VERBOSE);
+    if (sc2_ps5_log_stage) sc2_ps5_log_stage("GPU: PS5 RADV startup-r1");
+#endif
     if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) {
 #if defined(SC2_PS5)
         if (sc2_ps5_log_stage) {
@@ -3381,7 +3400,28 @@ RecompD3dPresenterError d3d_backend_create(const RecompD3dPresenterConfig *confi
 #if defined(SC2_PS5)
     if (sc2_ps5_log_stage) sc2_ps5_log_stage("GPU presenter: creating SDL GPU device");
 #endif
-#ifdef __ANDROID__
+#if defined(SC2_PS5)
+#ifndef CPE_PROP_GPU_DEVICE_CREATE_PS5_RADV_NONCONFORMANT_BOOLEAN
+#error "PS5 presenter requires the reviewed PS5 RADV SDL policy, not desktop SDL"
+#endif
+    SDL_PropertiesID properties = SDL_CreateProperties();
+    if (!properties) return fail("SDL GPU properties");
+    const bool configured =
+        SDL_SetBooleanProperty(properties, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_SPIRV_BOOLEAN, true) &&
+        SDL_SetBooleanProperty(properties, SDL_PROP_GPU_DEVICE_CREATE_DEBUGMODE_BOOLEAN, false) &&
+        SDL_SetStringProperty(properties, SDL_PROP_GPU_DEVICE_CREATE_NAME_STRING, "vulkan") &&
+        SDL_SetBooleanProperty(properties, CPE_PROP_GPU_DEVICE_CREATE_PS5_RADV_NONCONFORMANT_BOOLEAN, true);
+    if (!configured) {
+        char saved[512]; SDL_strlcpy(saved, SDL_GetError(), sizeof saved);
+        SDL_DestroyProperties(properties);
+        SDL_SetError("%s", saved);
+        return fail("PS5 GPU property configuration");
+    }
+    created->device = SDL_CreateGPUDeviceWithProperties(properties);
+    char gpuError[512]; SDL_strlcpy(gpuError, SDL_GetError(), sizeof gpuError);
+    SDL_DestroyProperties(properties);
+    if (!created->device) SDL_SetError("%s", gpuError);
+#elif defined(__ANDROID__)
     // Phones' Vulkan drivers vary: of SDL's optional features only depth clamping is asked for, which most of the
     // pipelines use (no depth clip); none uses clip distances, anisotropy or indirect draws
     SDL_PropertiesID properties = SDL_CreateProperties();

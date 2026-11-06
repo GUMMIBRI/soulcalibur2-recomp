@@ -80,3 +80,15 @@ __attribute__((constructor(102))) static void exception_trace_build_marker()
 {
     sc2_ps5_log_stage("SC2 build: exception-trace-20261105-r1");
 }
+
+// Public patched SDL/RADV weak observation hook; no GPU ownership changes.
+extern "C" void CPE_GPUTrace(const char *stage, long long result,
+                              unsigned long long a, unsigned long long b)
+{
+    static unsigned records;
+    if (__atomic_fetch_add(&records, 1u, __ATOMIC_RELAXED) >= 192) return;
+    char line[384];
+    std::snprintf(line, sizeof line, "GPU stage=%.160s result=%lld a=%llu b=%llu",
+                  stage ? stage : "(null)", result, a, b);
+    sc2_ps5_log_stage(line);
+}

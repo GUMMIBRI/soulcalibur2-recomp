@@ -1,0 +1,18 @@
+{
+  "scope": "PS5 SDL GPU startup; no console boot claim",
+  "sdl_upstream_revision": "fa2c02bb6e21974a89ea9824bc53c9932abe5f9c",
+  "sdl_archive_sha256": "0acbbede2b256cce605dfaa788b3ce1d9989588dad61426b2014a685a63f5dbf",
+  "sdl_gpu_header_sha256": "0e5f8278450744845bd0e293a8e7480c379cbf90cc910cf17481346ccbe7be04",
+  "sdl_vulkan_source_sha256": "8cffaf9805ed7b4c70815e32acadb9b148a01a51698b5a2358f880452b89d937",
+  "sdl_overlay": "Public PS5 port plus reviewed PS5 RADV nonconformance policy; altered SDL, Zlib license",
+  "policy": "CPE.gpu.device.create.ps5.radv.nonconformant",
+  "platform_repository": "https://github.com/mihawk-99/PS5_PayloadSDK",
+  "platform_revision": "b83202be73e930050e00de0f1b4d9ec46c0391bf",
+  "thread_family": [
+    "pthread_create",
+    "pthread_join",
+    "pthread_detach"
+  ],
+  "thread_abi": "Game/provider pthread.h identical SHA256 b8c84af542d20ed52124d7aa7df65a3b0c50ce8030dc5f54af0465115750fa18; opaque thread/attr pointer typedefs",
+  "reference": "Special thanks to the Parasite Eve PC port team."
+}
