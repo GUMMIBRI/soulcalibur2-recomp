@@ -114,6 +114,82 @@ static int setenv(const char *name, const char *value, int overwrite)
 }
 #endif
 
+#if defined(SC2_PS5)
+/* Avoid the libc stream/iterator EOF path on the console. Count with bounded
+   native reads, then allocate exactly once and verify the reopened file size. */
+static bool PS5ReadXbe(const std::string &path, std::vector<std::uint8_t> &bytes)
+{
+    struct NativeFile {
+        int fd;
+        ~NativeFile() { if (fd >= 0) sceKernelClose(fd); }
+    };
+    constexpr std::size_t limit = 64u << 20;
+    auto logBytes = [](const char *stage, std::size_t count) {
+        char message[128];
+        std::snprintf(message, sizeof(message), "%s=%llu", stage,
+                      static_cast<unsigned long long>(count));
+        SC2_PS5_STAGE(message);
+    };
+    auto read = [](int fd, void *buffer, std::size_t count) {
+        const auto result = sceKernelRead(fd, buffer, count);
+        if (result < 0) {
+            char message[96];
+            std::snprintf(message, sizeof(message), "runner:xbe-native-read-error=%lld",
+                          static_cast<long long>(result));
+            SC2_PS5_STAGE(message);
+        }
+        return result;
+    };
+    NativeFile source{sceKernelOpen(path.c_str(), O_RDONLY | O_NOFOLLOW | O_NONBLOCK, 0)};
+    if (source.fd < 0) {
+        SC2_PS5_STAGE("runner:xbe-native-open-failed");
+        return false;
+    }
+    SC2_PS5_STAGE("runner:xbe-native-size-begin");
+    std::uint8_t chunk[65536];
+    std::size_t length = 0;
+    for (;;) {
+        const auto got = read(source.fd, chunk, sizeof(chunk));
+        if (got < 0 || static_cast<std::uint64_t>(got) > sizeof(chunk)) return false;
+        if (got == 0) break;
+        if (static_cast<std::size_t>(got) > limit - length) {
+            SC2_PS5_STAGE("runner:xbe-native-too-large");
+            return false;
+        }
+        length += static_cast<std::size_t>(got);
+    }
+    logBytes("runner:xbe-native-file-bytes", length);
+    if (length == 0) return false;
+    const int closeResult = sceKernelClose(source.fd);
+    source.fd = -1;
+    if (closeResult < 0) return false;
+    source.fd = sceKernelOpen(path.c_str(), O_RDONLY | O_NOFOLLOW | O_NONBLOCK, 0);
+    if (source.fd < 0) return false;
+    logBytes("runner:xbe-allocation-requested", length);
+    SC2_PS5_STAGE("runner:xbe-allocation-begin");
+    bytes.resize(length);
+    SC2_PS5_STAGE("runner:xbe-allocation-ready");
+    std::size_t offset = 0;
+    while (offset < length) {
+        const auto requested = std::min(sizeof(chunk), length - offset);
+        const auto got = read(source.fd, bytes.data() + offset, requested);
+        if (got <= 0 || static_cast<std::uint64_t>(got) > requested) {
+            logBytes("runner:xbe-native-short-read-bytes", offset);
+            return false;
+        }
+        offset += static_cast<std::size_t>(got);
+    }
+    logBytes("runner:xbe-native-read-bytes", offset);
+    const auto trailing = read(source.fd, chunk, 1);
+    if (trailing != 0) {
+        SC2_PS5_STAGE("runner:xbe-native-length-changed");
+        return false;
+    }
+    SC2_PS5_STAGE("runner:xbe-native-read-ready");
+    return true;
+}
+#endif
+
 static RecompInputPulseSource inputPulses;
 static bool scriptedInputOnly;
 
@@ -1392,8 +1468,13 @@ int main(int argc, char **argv)
     SC2_PS5_STAGE("runner:xbe-parse-begin");
     SC2_PS5_STAGE(discImage.empty() ? xbePath.c_str() : discImage.c_str());
     try {
-        parsed = discImage.empty() ? doaxbv::XbeParser().parse(std::filesystem::u8path(xbePath))
-                                  : doaxbv::XbeParser().parse(std::move(imageXbe));
+        if (discImage.empty() && !PS5ReadXbe(xbePath, imageXbe)) {
+            SC2_PS5_STAGE("runner:xbe-native-load-failed");
+            return 1;
+        }
+        SC2_PS5_STAGE("runner:xbe-vector-parse-entered");
+        parsed = doaxbv::XbeParser().parse(std::move(imageXbe));
+        SC2_PS5_STAGE("runner:xbe-vector-parse-returned");
     } catch (const std::exception &failure) {
         SC2_PS5_STAGE("runner:xbe-parse-exception");
         SC2_PS5_STAGE(failure.what());

@@ -236,10 +236,10 @@ def game_sources():
 def validate_install_root(value):
     """Explicit target-side metadata; do not resolve it through the host CWD."""
     if (not isinstance(value, str) or len(value.encode("utf-8")) > 384 or
-            not re.fullmatch(r"/mnt/(?:usb[0-9]+|data/homebrew)/[^\\\r\n]+", value) or
+            not re.fullmatch(r"/mnt/usb[0-9]+/[^\\\r\n]+", value) or
             any(ord(c) < 32 or ord(c) == 127 for c in value) or
             any(part in ("", ".", "..") for part in value.split("/")[1:])):
-        raise ValueError("install root must be an explicit USB or installed-homebrew directory without dot components")
+        raise ValueError("install root must be an explicit numeric USB app directory without dot components")
     return value
 
 

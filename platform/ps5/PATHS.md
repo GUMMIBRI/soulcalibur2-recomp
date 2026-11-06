@@ -74,7 +74,7 @@ a platform folder.
 PS5LaunchPaths receives the original absolute executable path from argv[0].
 It never invents a path from a loader CWD. An argc-zero or relative-path loader
 must supply SC2_PS5_EBOOT_DIR with the actual absolute eboot directory. The
-directory must exist on USB or under /mnt/data/homebrew; /data is read-only.
+directory must exist under a numeric /mnt/usbN mount; /data assets are read-only.
 
 Active storage defaults to <eboot>/storage and settings to <eboot>/settings.ini.
 Explicit persistence paths must resolve inside the same validated eboot folder;

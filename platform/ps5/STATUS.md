@@ -1,5 +1,13 @@
 # PS5 homebrew port
 
+Latest diagnostic captured actualstd::bad_alloc during XBE parse. A bounded
+native XBE reader now measures input length, allocates exactly once and checks
+read length before the unchanged vector parser/hash gates. Link360 SDK-backed
+imports, zero decoded direct syscalls and SELF checks pass. New eboot is uploaded
+with local-hash/remote-size verification only; assets/saves/logs preserved.
+private/cpp-diagnostic-retest/NATIVE-XBE-UPLOAD.json. The next human test will
+identify allocation/read/parser stage; no heap-cause or gameplay claim yet.
+
 Newest human retest: USB-anchor build e94e51a6... reaches paths-ready and
 game-validation-begin. The next abort maps to libc++abi abort_message; no
 exception text yet, so file-stream/locale/heap causes are not established.

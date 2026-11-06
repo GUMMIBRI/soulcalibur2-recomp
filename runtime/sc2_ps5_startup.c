@@ -38,7 +38,7 @@ static int sc2_root_allowed(void)
         if (root[i] < '0' || root[i] > '9') return 0;
         while (root[i] >= '0' && root[i] <= '9') ++i;
         if (root[i] != '/' || !root[i + 1]) return 0;
-    } else if (!sc2_prefix(root, "/mnt/data/homebrew/")) return 0;
+    } else return 0;
     for (i = 0; root[i]; ++i) {
         const unsigned char c = (unsigned char)root[i];
         if (i >= 384 || c < 32 || c == 127 || c == 92) return 0;

@@ -66,8 +66,7 @@ inline bool PS5USBPath(const std::filesystem::path &path)
 
 inline bool PS5AppNamespace(const std::filesystem::path &path)
 {
-    const auto value = path.generic_string();
-    return PS5USBPath(path) || value.compare(0, 19, "/mnt/data/homebrew/") == 0;
+    return PS5USBPath(path);
 }
 
 inline std::filesystem::path PS5KnownAppRoot()
@@ -422,7 +421,7 @@ inline bool PS5LaunchPaths(std::string &xbe, std::string &disc,
     // no-follow directory; publishing metadata is not a successful probe.
     std::filesystem::path lexicalEboot;
     if (!PS5LexicalPath(eboot, lexicalEboot, &error) || !PS5AppNamespace(lexicalEboot)) {
-        error = "eboot metadata must name an approved physical USB/homebrew directory: " + eboot.string();
+        error = "eboot metadata must name an app directory on a numeric USB mount: " + eboot.string();
         return false;
     }
     eboot = lexicalEboot;

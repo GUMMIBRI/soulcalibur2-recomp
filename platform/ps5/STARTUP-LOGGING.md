@@ -29,6 +29,16 @@ without a usable exception message. The diagnostic build is
 private/ps5-app-cpp-diagnostics-20261105; its size-only USB update receipt is
 private/anchor-retest/CPP-DIAGNOSTIC-UPLOAD.json. Human retest is pending.
 
+That retest caught `std::bad_alloc` during XBE parsing. The next build uses
+native open/read/close for extracted XBE input: bounded64MiB first-pass counting,
+one exact vector allocation, and a second pass checking short/extra bytes.
+It records measured and allocated byte counts, then calls the unchanged
+vector parser and fingerprint checks. File handles close on exceptions.
+This distinguishes file-stream growth from a bounded allocation/parser failure;
+it does not establish which caused the earlier exception. ISO handling remains
+unchanged. Artifact: private/ps5-app-native-xbe-20261105; size-only upload receipt:
+private/cpp-diagnostic-retest/NATIVE-XBE-UPLOAD.json. Human retest is pending.
+
 The first human launch registered the app but reported
 `0xa0020102 PRX_SCE_MODULE_LOAD_ERROR`. Reviewing the working PE native recipe
 identified the missing public source-built `sce_module/libc.prx` loader shim.
