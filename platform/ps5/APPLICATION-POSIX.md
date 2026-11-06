@@ -19,7 +19,11 @@ Native mmap/mprotect use libkernel imports. The original SC2 POSIX adapter uses
 real _openat and _fpathconf imports, with readonly open/close for pathconf.
 Absolute or AT_FDCWD stat operations use real stat/lstat. Mutation adapters
 anchor relative names to the explicit app root and permit only that root or
-its /app0 alias, rejecting traversal and symlink components. Assets outside the
+its /app0 alias, rejecting traversal and symlink components. Mutations open the
+explicit app root directly, then hold directory descriptors through descendant
+opens. The final mutating open uses the verified parent descriptor; chmod uses
+the opened file descriptor. Unlink still forwards the bounded full path after
+checks and assumes no concurrent parent replacement. Assets outside the
 app remain readable. Mesa and XDG cache locations are explicitly inside the app.
 
 Limitations are explicit: relative directory-FD stat/mutation operations and

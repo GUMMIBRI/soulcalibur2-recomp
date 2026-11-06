@@ -34,26 +34,38 @@ static int path_at_supported(int directory, const char *path)
     return 1;
 }
 
-/* Mutations are deliberately narrower than reads. Resolve relative names
-   against fixed application metadata, never a loader/current working directory.
-   Reject traversal and symlink components instead of following them outside. */
-static int mutation_path(int directory, const char *path, char result[PATH_MAX])
+static void close_preserving_errno(int descriptor)
+{
+    const int saved = errno;
+    (void)sceKernelClose(descriptor);
+    errno = saved;
+}
+
+/* Mutations are deliberately narrower than reads. Relative names anchor to
+   fixed app metadata, never CWD. Start directly at that permitted app root
+   (or /app0), not /mnt: the sandbox denies inspecting system ancestors.
+   Prove descendant parents using directory opens, without stat field ABI. */
+static int mutation_parent(int directory, const char *path, char result[PATH_MAX], char **leaf)
 {
     static const char root[] = SC2_PS5_INSTALL_ROOT;
+    const char *anchor = root;
     size_t length, root_length = sizeof(root) - 1, i, component = 0;
-    struct stat status;
-    if (!path_at_supported(directory, path)) return 0;
+    char *cursor;
+    int parent;
+    if (!path_at_supported(directory, path)) return -1;
     length = strnlen(path, PATH_MAX);
-    if (length >= PATH_MAX) { errno = ENAMETOOLONG; return 0; }
+    if (length >= PATH_MAX) { errno = ENAMETOOLONG; return -1; }
     if (path[0] == '/') {
-        if (!((length >= root_length && !strncmp(path, root, root_length) &&
-               (path[root_length] == '/' || !path[root_length])) ||
-              (!strncmp(path, "/app0", 5) && (path[5] == '/' || !path[5])))) {
-            errno = EACCES; return 0;
-        }
+        if (length >= root_length && !strncmp(path, root, root_length) &&
+            (path[root_length] == '/' || !path[root_length])) {
+            /* Physical app-root identity selected by the build. */
+        } else if (!strncmp(path, "/app0", 5) && (path[5] == '/' || !path[5])) {
+            anchor = "/app0";
+            root_length = 5;
+        } else { errno = EACCES; return -1; }
         memcpy(result, path, length + 1);
     } else {
-        if (root_length + 1 + length >= PATH_MAX) { errno = ENAMETOOLONG; return 0; }
+        if (root_length + 1 + length >= PATH_MAX) { errno = ENAMETOOLONG; return -1; }
         memcpy(result, root, root_length);
         result[root_length] = '/';
         memcpy(result + root_length + 1, path, length + 1);
@@ -63,26 +75,33 @@ static int mutation_path(int directory, const char *path, char result[PATH_MAX])
         if (result[i] == '/' || !result[i]) {
             if (!component || (component == 1 && result[i - 1] == '.') ||
                 (component == 2 && result[i - 1] == '.' && result[i - 2] == '.')) {
-                errno = EACCES; return 0;
+                errno = EACCES; return -1;
             }
             component = 0;
         } else ++component;
     }
-    for (i = 1; i <= length; ++i) {
-        if (result[i] == '/' || !result[i]) {
-            const char saved = result[i];
-            int found;
-            result[i] = 0;
-            found = lstat(result, &status);
-            result[i] = saved;
-            if (found < 0) {
-                if (errno == ENOENT && !saved) return 1;
-                return 0;
-            }
-            if (S_ISLNK(status.st_mode)) { errno = EACCES; return 0; }
-        }
+    /* Do not remove or change the application-root directory itself. */
+    if (length <= root_length + 1) { errno = EACCES; return -1; }
+    parent = sceKernelOpen(anchor, O_RDONLY | O_DIRECTORY | O_NOFOLLOW, (mode_t)0);
+    if (parent < 0) {
+        const uint32_t code = (uint32_t)parent;
+        errno = (code & 0xffff0000u) == 0x80020000u ? (int)(code & 0xffffu) : EIO;
+        return -1;
     }
-    return 1;
+    cursor = result + root_length + 1;
+    for (;;) {
+        char *next = cursor;
+        int child;
+        while (*next && *next != '/') ++next;
+        if (!*next) { *leaf = cursor; return parent; }
+        *next = 0;
+        child = _openat(parent, cursor, O_RDONLY | O_DIRECTORY | O_NOFOLLOW, (mode_t)0);
+        *next = '/';
+        close_preserving_errno(parent);
+        if (child < 0) return -1;
+        parent = child;
+        cursor = next + 1;
+    }
 }
 
 int openat(int directory, const char *path, int flags, ...)
@@ -95,9 +114,14 @@ int openat(int directory, const char *path, int flags, ...)
         va_end(arguments);
     }
     if ((flags & O_ACCMODE) != O_RDONLY || (flags & (O_CREAT | O_TRUNC | O_APPEND))) {
-        char bounded[PATH_MAX];
-        if (!mutation_path(directory, path, bounded)) return -1;
-        return _openat(AT_FDCWD, bounded, flags | O_NOFOLLOW, mode);
+        char bounded[PATH_MAX], *leaf;
+        int parent = mutation_parent(directory, path, bounded, &leaf), result;
+        if (parent < 0) return -1;
+        /* Only native O_CREAT may admit a missing final child. NOFOLLOW
+           rejects final symlinks without requiring read permission to write. */
+        result = _openat(parent, leaf, flags | O_NOFOLLOW, mode);
+        close_preserving_errno(parent);
+        return result;
     }
     return _openat(directory, path, flags, mode);
 }
@@ -131,17 +155,32 @@ int fchmodat(int directory, const char *path, mode_t mode, int flags)
 {
     if (flags & ~AT_SYMLINK_NOFOLLOW) { errno = EINVAL; return -1; }
     if (flags & AT_SYMLINK_NOFOLLOW) { errno = ENOTSUP; return -1; }
-    char bounded[PATH_MAX];
-    if (!mutation_path(directory, path, bounded)) return -1;
-    return chmod(bounded, mode);
+    char bounded[PATH_MAX], *leaf;
+    int parent = mutation_parent(directory, path, bounded, &leaf), target, result;
+    if (parent < 0) return -1;
+    target = _openat(parent, leaf, O_RDONLY | O_NOFOLLOW, (mode_t)0);
+    close_preserving_errno(parent);
+    if (target < 0) return -1;
+    result = fchmod(target, mode);
+    close_preserving_errno(target);
+    return result;
 }
 
 int unlinkat(int directory, const char *path, int flags)
 {
     if (flags & ~AT_REMOVEDIR) { errno = EINVAL; return -1; }
-    char bounded[PATH_MAX];
-    if (!mutation_path(directory, path, bounded)) return -1;
-    return flags & AT_REMOVEDIR ? rmdir(bounded) : unlink(bounded);
+    char bounded[PATH_MAX], *leaf;
+    int parent = mutation_parent(directory, path, bounded, &leaf), target, result;
+    if (parent < 0) return -1;
+    target = _openat(parent, leaf, O_RDONLY | O_NOFOLLOW |
+        (flags & AT_REMOVEDIR ? O_DIRECTORY : 0), (mode_t)0);
+    if (target < 0) { close_preserving_errno(parent); return -1; }
+    close_preserving_errno(target);
+    /* There is no established native unlinkat import. Its proved bounded
+       absolute spelling is forwarded to the actual unlink/rmdir service. */
+    result = flags & AT_REMOVEDIR ? rmdir(bounded) : unlink(bounded);
+    close_preserving_errno(parent);
+    return result;
 }
 
 /* No application process-creation, symlink-reading or nanosecond timestamp

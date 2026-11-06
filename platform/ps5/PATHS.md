@@ -29,8 +29,11 @@ spellings) takes priority. Otherwise disc.iso takes priority; with no such
 conventional name, one .iso is accepted case-insensitively. Multiple distinct
 images require explicit --disc selection or renaming the Xbox image disc.iso;
 the runtime does not guess among donor games. Directory discovery is bounded
-to256 entries. Files use bounded absolute lexical paths and native lstat
-component checks; dot traversal, symlinks and nondirectory ancestors reject.
+to256 entries. Files use bounded absolute lexical paths and native no-follow
+opens at approved app/asset anchors. Directory opens prove directory identity;
+dot traversal, links and nondirectory parents reject. Protected /mnt and /
+ancestors are never inspected. USB discovery probes usb0–usb7 asset folders
+directly, with explicit numeric USB roots supported through launch metadata.
 They cannot escape the selected asset
 root through a link. The actual Xbox image reader and executable fingerprint
 validation still decide whether the selected input is supported.
@@ -75,6 +78,9 @@ directory must exist on USB or under /mnt/data/homebrew; /data is read-only.
 
 Active storage defaults to <eboot>/storage and settings to <eboot>/settings.ini.
 Explicit persistence paths must resolve inside the same validated eboot folder;
+the explicit app identity is retained before opening its directory. Namespace
+ancestors above an approved anchor are trusted OS/loader metadata; checks apply
+at and below that anchor without querying protected system parents.
 links into another app or the asset tree are rejected. Approved directories
 are checked with temporary write probes; failure is reported, without changing
 location. Asset saves/ is import/export staging and does not become active

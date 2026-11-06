@@ -23,8 +23,10 @@ CHUNK = 1024 * 1024
 MAX_JSON = 16 * 1024 * 1024
 MAX_FILES = 30000
 MAX_BYTES = 12 * 1024 * 1024 * 1024
-TOPS = {'Soulcalibur II', 'soulcalibur2'}
-CRITICAL = {'Soulcalibur II/eboot.bin', 'Soulcalibur II/sce_sys/param.json', 'soulcalibur2/game files/Default.xbe',
+TOPS = {'homebrew', 'soulcalibur2'}
+APP_REL = 'homebrew/Soulcalibur II'
+CRITICAL = {'homebrew/Soulcalibur II/eboot.bin', 'homebrew/Soulcalibur II/sce_sys/param.json', 'soulcalibur2/game files/Default.xbe',
+            'homebrew/Soulcalibur II/sce_module/libc.prx',
             'soulcalibur2/game files/root.olk', 'soulcalibur2/guests.olk',
             'soulcalibur2/game files/Soulcalibur II (USA).iso'}
 
@@ -51,8 +53,11 @@ def relative(value):
     parts = value.split('/')
     if any(p in ('', '.', '..') for p in parts) or parts[0] not in TOPS:
         raise ValueError('package member must stay in the two SC2 folders')
-    if parts[0] == 'Soulcalibur II' and len(parts) > 1 and parts[1].casefold() in {
-            'storage', 'saves', 'settings.ini', 'shader-requests', 'shader-cache', '.mesa-streams', 'screenshots'}:
+    if parts[0] == 'homebrew' and (len(parts) < 2 or parts[1] != 'Soulcalibur II'):
+        raise ValueError('only the exact SC2 app child is permitted under homebrew')
+    if parts[0] == 'homebrew' and len(parts) > 2 and parts[2].casefold() in {
+            'storage', 'saves', 'settings.ini', 'startup.log', 'shader-requests', 'shader-cache',
+            'driver-cache', 'cache', '.mesa-streams', 'screenshots'}:
         raise ValueError('active saves/config/cache must never be shipped')
     if value.lower().endswith('.iso') and value != 'soulcalibur2/game files/Soulcalibur II (USA).iso':
         raise ValueError('donor ISO is not an upload asset')
@@ -60,8 +65,8 @@ def relative(value):
 
 
 def usb_path(value):
-    if not isinstance(value, str) or not re.fullmatch(r'/mnt/usb[0-6](?:/[^\\\r\n]+)?', value):
-        raise ValueError('remote paths must stay under /mnt/usb0–usb6')
+    if not isinstance(value, str) or not re.fullmatch(r'/mnt/usb[0-9]+(?:/[^\\\r\n]+)?', value):
+        raise ValueError('remote paths must stay under a numeric /mnt/usbN mount')
     parts = value.split('/')[1:]
     if any(p in ('', '.', '..') for p in parts) or any(ord(c) < 32 for c in value):
         raise ValueError('invalid USB path components')
@@ -75,13 +80,15 @@ def load_package(path, expected_hash, destination):
     if not re.fullmatch('[0-9a-f]{64}', expected_hash) or sha256(path) != expected_hash:
         raise ValueError('package manifest identity differs from selected artifact')
     manifest = json.loads(path.read_text(encoding='utf-8'))
-    if manifest.get('format') != 'SC2-PRIVATE-PACKAGE-3':
-        raise ValueError('require finalized private package v3')
+    if manifest.get('format') != 'SC2-PRIVATE-PACKAGE-4':
+        raise ValueError('outdated layout: require package v4 with homebrew/Soulcalibur II; no automatic migration')
     if manifest.get('original_xbe_sha256') not in {
             '7ce12851850ab46766f77c612b251afe7c8bd81f879e11b4836bdf766be542c6',
             'd7c2e1fc993350821e3f7e13cfd1c9d4ba6a7bf91011005bdd1f843899efb730'}:
         raise ValueError('package does not authenticate a supported USA executable')
-    if manifest.get('console_eboot_dir') != destination + '/Soulcalibur II':
+    if manifest.get('application_relative_dir') != APP_REL:
+        raise ValueError('package application relative directory is not the exact SC2 homebrew child')
+    if manifest.get('console_eboot_dir') != destination + '/' + APP_REL:
         raise ValueError('package eboot path differs from the USB destination')
     rows = manifest.get('files')
     if not isinstance(rows, list) or not 1 <= len(rows) <= MAX_FILES:
@@ -105,7 +112,7 @@ def load_package(path, expected_hash, destination):
         if total > MAX_BYTES:
             raise ValueError('package exceeds12GiB upload budget; donor discs must not be copied')
         files.append(dict(path=str(rel), source=source, bytes=size, sha256=row['sha256']))
-    if 'soulcalibur ii/eboot.bin' not in seen:
+    if 'homebrew/soulcalibur ii/eboot.bin' not in seen:
         raise ValueError('finalized eboot.bin is missing')
     by_name = {row['path']: row for row in files}
     if manifest.get('disc_mode') == 'extracted':
@@ -123,13 +130,13 @@ def load_package(path, expected_hash, destination):
         raise ValueError('unsupported package disc mode')
     if roster['sha256'] != manifest.get('guest_roster_sha256'):
         raise ValueError('converted character/weapon roster differs from package identity')
-    if manifest.get('metadata_supplied') and 'Soulcalibur II/sce_sys/param.json' not in by_name:
+    if manifest.get('metadata_supplied') and 'homebrew/Soulcalibur II/sce_sys/param.json' not in by_name:
         raise ValueError('package metadata flag lacks actual app parameter JSON')
     # Include declared empty layout folders, but never arbitrary unmanifested files.
     directories = set()
     for row in files:
         for parent in PurePosixPath(row['path']).parents:
-            if str(parent) != '.': directories.add(str(parent))
+            if str(parent) not in ('.', 'homebrew'): directories.add(str(parent))
     for current, dirs, _ in os.walk(path.parent / 'soulcalibur2', followlinks=False):
         for name in dirs:
             folder = plain(Path(current) / name)
@@ -203,10 +210,16 @@ class Wfm:
         return value['entries']
 
     def assert_fresh(self, destination, archive_name=None):
-        names = {row['name'].casefold() for row in self.listing(destination)}
-        requested = TOPS | ({archive_name} if archive_name else set())
-        if names.intersection({name.casefold() for name in requested}):
-            raise ValueError('USB app/assets/archive destination exists; never merge or overwrite')
+        entries = self.listing(destination)
+        names = {row['name'].casefold() for row in entries}
+        if 'soulcalibur2' in names or (archive_name and archive_name.casefold() in names):
+            raise ValueError('USB assets/archive destination exists; never merge or overwrite')
+        parents = [row for row in entries if row['name'].casefold() == 'homebrew']
+        if parents:
+            if len(parents) != 1 or parents[0]['name'] != 'homebrew' or parents[0].get('type') != 'd':
+                raise ValueError('homebrew parent must be the exact ordinary directory')
+            if any(row['name'].casefold() == 'soulcalibur ii' for row in self.listing(destination + '/homebrew')):
+                raise ValueError('SC2 app child already exists; other homebrew apps are preserved')
 
     def upload(self, task_id, destination, source, archive_name, expected_hash, expected_size=None):
         usb_path(destination)
@@ -342,12 +355,12 @@ def execute_files(wfm, args, destination, files, directories, total, report, sav
     report['created_empty_directories'] = ensure_remote_directories(wfm, destination, directories)
     report['remote_sizes'] = verify_sizes(wfm, destination, files, directories)
     report['file_readbacks'] = []
-    selected = files if args.verify == 'all' else [row for row in files if row['path'] in CRITICAL]
+    selected = files if args.verify == 'all' else ([row for row in files if row['path'] in CRITICAL] if args.verify == 'critical' else [])
     for row in selected:
         report['file_readbacks'].append(wfm.readback(destination + '/' + row['path'], row['bytes'], row['sha256'], args.task_timeout))
         save()
     report.update(state='usb-transfer-verified', uploaded=True,
-                  verification='all-file-sizes+' + args.verify + '-file-sha256',
+                  verification=('local-sha256+remote-all-file-sizes' if args.verify == 'sizes' else 'all-file-sizes+' + args.verify + '-file-sha256'),
                   no_archive_extraction=True)
     save()
     print('Direct USB file transfer verified; no helper, app install, launch or save/config overwrite.', flush=True)
@@ -398,8 +411,8 @@ def main():
     parser.add_argument('--destination', default='/mnt/usb0', help='USB root only; app/asset folders must both be absent')
     parser.add_argument('--server', default='http://192.168.1.23:8888')
     parser.add_argument('--report', type=Path, required=True, help='new local receipt below private/')
-    parser.add_argument('--verify', choices=('critical', 'all'), default='critical')
-    parser.add_argument('--mode', choices=('zip', 'files'), default='zip', help='files streams directly and needs no 7zip helper')
+    parser.add_argument('--verify', choices=('sizes', 'critical', 'all'), default='sizes')
+    parser.add_argument('--mode', choices=('zip', 'files'), default='files', help='default files streams directly and needs no 7zip helper')
     parser.add_argument('--task-timeout', type=int, default=1800)
     parser.add_argument('--execute', action='store_true', help='perform the explicitly authorized USB transfer')
     parser.add_argument('--keep-local-zip', action='store_true')
@@ -408,7 +421,7 @@ def main():
     report = None
     try:
         destination = usb_path(args.destination)
-        if not re.fullmatch(r'/mnt/usb[0-6]', destination):
+        if not re.fullmatch(r'/mnt/usb[0-9]+', destination):
             raise ValueError('select a USB root so the exact two-folder layout remains discoverable')
         if not 30 <= args.task_timeout <= 7200:
             raise ValueError('task timeout must be30–7200 seconds')
@@ -423,6 +436,8 @@ def main():
         wfm = Wfm(args.server)
         report = dict(schema='sc2.usb-transfer.v1', manifest_sha256=args.manifest_sha256, destination=destination,
                       files=len(files), uncompressed_bytes=total, execute=args.execute, mode=args.mode, uploaded=False,
+                      verification_requested=args.verify, manifest_path=str(plain(args.manifest)),
+                      local_eboot_identity=next(dict(path=destination + '/' + row['path'], bytes=row['bytes'], sha256=row['sha256']) for row in files if row['path'] == 'homebrew/Soulcalibur II/eboot.bin'),
                       installed=False, console_launched=False, gameplay_verified=False)
         output.parent.mkdir(parents=True, exist_ok=True)
         def save(): output.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
@@ -469,26 +484,25 @@ def main():
                 pass
             raise
         report['archive_uploaded'] = True
-        report['archive_readback'] = wfm.readback(remote_archive, archive['bytes'], archive['sha256'], args.task_timeout)
+        if args.verify != 'sizes':
+            report['archive_readback'] = wfm.readback(remote_archive, archive['bytes'], archive['sha256'], args.task_timeout)
         archive_entry = next((row for row in wfm.listing(destination) if row['name'] == archive_name), None)
         if not archive_entry or archive_entry.get('type') != '-' or archive_entry.get('size') != archive['bytes']:
             raise ValueError('uploaded archive metadata does not identify a regular file')
         # Recheck only app/assets names; the verified archive now exists.
-        names = {row['name'].casefold() for row in wfm.listing(destination)}
-        if names.intersection({name.casefold() for name in TOPS}):
-            raise ValueError('SC2 destination appeared during transfer; extraction refused')
+        wfm.assert_fresh(destination)
         extract = wfm.api('/api/extract', dict(paths=remote_archive, destination=destination, separate='0', overwrite='0'), form=True)
         report.update(state='extracting-new-folders', extract_task_id=extract['task_id'])
         save()
         report['extract_task'] = wfm.wait(extract['task_id'], args.task_timeout)
         report['remote_sizes'] = verify_sizes(wfm, destination, files, directories)
-        selected = files if args.verify == 'all' else [row for row in files if row['path'] in CRITICAL]
+        selected = files if args.verify == 'all' else ([row for row in files if row['path'] in CRITICAL] if args.verify == 'critical' else [])
         report['file_readbacks'] = []
         for row in selected:
             report['file_readbacks'].append(wfm.readback(destination + '/' + row['path'], row['bytes'], row['sha256'], args.task_timeout))
             save()
         report.update(state='usb-transfer-verified', uploaded=True,
-                      verification='archive-sha256+all-file-sizes+' + args.verify + '-file-sha256',
+                      verification=('local-sha256+remote-all-file-sizes' if args.verify == 'sizes' else 'archive-sha256+all-file-sizes+' + args.verify + '-file-sha256'),
                       remote_archive_retained=True, local_zip_retained=args.keep_local_zip)
         if not args.keep_remote_zip:
             try:

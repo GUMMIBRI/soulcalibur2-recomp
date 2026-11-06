@@ -24,7 +24,7 @@ metadata or establish a successful console launch.
 ## Default extracted layout
 
 ```text
-Soulcalibur II/
+homebrew/Soulcalibur II/
     eboot.bin
     sce_sys/...              only if authenticated by finalization
     legal/...                finalizer's rights notices
@@ -61,7 +61,7 @@ The runtime recognizes the versioned converted root in `game files/` and uses
 the same file as its guest overlay: there is no second guest/base archive copy.
 
 ```powershell
-python tools/ps5_package.py --finalization private/ps5-finalized/FINALIZATION.json --disc "Soulcalibur II (USA)/Soulcalibur II (USA).iso" --guests private/ps5-guests/guests.olk --guests-receipt private/ps5-guests/CONVERSION-RECEIPT.json --textures-gamecube private/hd-pack/converted/soulcalibur2/textures --shader-cache private/hd-pack/converted/soulcalibur2/shader-cache --console-eboot-dir "/mnt/usb0/Soulcalibur II" --output private/ps5-test-package
+python tools/ps5_package.py --finalization private/ps5-finalized/FINALIZATION.json --disc "Soulcalibur II (USA)/Soulcalibur II (USA).iso" --guests private/ps5-guests/guests.olk --guests-receipt private/ps5-guests/CONVERSION-RECEIPT.json --textures-gamecube private/hd-pack/converted/soulcalibur2/textures --shader-cache private/hd-pack/converted/soulcalibur2/shader-cache --console-eboot-dir "/mnt/usb0/homebrew/Soulcalibur II" --output private/ps5-test-package
 ```
 
 This is a command template. A successful finalization artifact must exist first;
@@ -112,3 +112,15 @@ converted guest receipt admission, and rejection of the real old host-module
 receipt passed. Positive finalized-SELF/package staging remains dependent on
 the parent's real finalized application artifact. No synthetic executable or
 fake success was created to exercise that path.
+
+
+## Current fresh USB layout (package v4)
+
+New packages declare application_relative_dir=homebrew/Soulcalibur II. The app
+is /mnt/usbN/homebrew/Soulcalibur II; assets remain /mnt/usbN/soulcalibur2.
+Active storage/saves stay beside the actual eboot. Existing unrelated homebrew
+apps are preserved. Neither SC2 child nor assets may already exist for a fresh
+upload; no merge, migration or overwrite is performed. Historical v3 artifacts
+and receipts remain historical evidence, but cannot be executed by the new
+uploader because their application layout is outdated. No new package copy or
+console transfer was produced to validate this layout change.

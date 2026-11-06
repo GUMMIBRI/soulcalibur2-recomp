@@ -274,8 +274,8 @@ def package(args):
     output, receipt_path = map(plain_path, (args.output, args.finalization))
     if output == PRIVATE.resolve() or not output.is_relative_to(PRIVATE.resolve()) or output.exists():
         raise ValueError("output must be a fresh subdirectory of ignored private/")
-    if not re.fullmatch(r"/mnt/(?:usb[0-6]|data/homebrew)/[^\r\n]+", args.console_eboot_dir):
-        raise ValueError("console eboot directory must be on usb0–6 or /mnt/data/homebrew; never /data")
+    if not re.fullmatch(r"/mnt/usb[0-9]+/homebrew/Soulcalibur II", args.console_eboot_dir):
+        raise ValueError("console eboot directory must be /mnt/usbN/homebrew/Soulcalibur II for numeric N")
     if any(part in (".", "..") for part in args.console_eboot_dir.split("/")):
         raise ValueError("console eboot directory may not contain dot path components")
     executable, metadata, finalization = finalized_app(receipt_path, args.eboot)
@@ -283,7 +283,7 @@ def package(args):
     if args.disc_mode == "iso" and disc["source"].is_dir():
         raise ValueError("ISO mode requires an Xbox ISO, not an extracted folder")
     guests, stamp, guest_receipt = guest_plan(args.guests, args.guests_receipt, disc)
-    app, assets = Path("Soulcalibur II"), Path("soulcalibur2")
+    app, assets = Path("homebrew/Soulcalibur II"), Path("soulcalibur2")
     copies = [(executable, app / "eboot.bin"), *((source, app / relative) for source, relative in metadata)]
     extents = []
     if args.disc_mode == "iso":
@@ -361,18 +361,18 @@ def package(args):
     finalized_app(receipt_path, executable)
     if digest(guests) != guest_receipt["output_sha256"]:
         raise ValueError("guest roster changed during packaging")
-    value = dict(format="SC2-PRIVATE-PACKAGE-3", asset_mode=args.asset_mode, disc_mode=args.disc_mode,
+    value = dict(format="SC2-PRIVATE-PACKAGE-4", asset_mode=args.asset_mode, disc_mode=args.disc_mode,
                  files=manifest, finalization_sha256=digest(receipt_path),
                  original_xbe_sha256=disc["xbe_sha256"], guest_roster_sha256=guest_receipt["output_sha256"],
                  source_disc=dict(kind="extracted" if disc["source"].is_dir() else "iso",
                                   sha256=disc["image_sha256"]),
-                 console_eboot_dir=args.console_eboot_dir, metadata_supplied=finalization.get("metadata_supplied", False),
-                 saves="active: Soulcalibur II/storage; soulcalibur2/saves is manual import/export staging",
+                 application_relative_dir="homebrew/Soulcalibur II", console_eboot_dir=args.console_eboot_dir, metadata_supplied=finalization.get("metadata_supplied", False),
+                 saves="active: homebrew/Soulcalibur II/storage; soulcalibur2/saves is manual import/export staging",
                  uploaded=False, console_executed=False, playability_verified=False)
     (output / "PACKAGE-MANIFEST.json").write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
     (output / "INSTALL.txt").write_text(
         "PRIVATE: contains owned game files and textures; do not publish.\n"
-        "App: Soulcalibur II/eboot.bin and only finalized PlayStation metadata/legal files.\n"
+        "App: homebrew/Soulcalibur II/eboot.bin and only finalized PlayStation metadata/legal files.\n"
         "Assets: soulcalibur2/game files, textures/{ps2,gamecube,spawn}, shader-cache.\n"
         "Converted exclusive root contains Spawn, Link and Heihachi with weapons; no donor GC/PS2 ISO is staged.\n"
         "Hardlinked local assets share bytes with sources; treat the staging tree as read-only.\n"
@@ -395,7 +395,7 @@ def main():
     parser.add_argument("--guests", type=Path, default=PRIVATE / "ps5-guests/guests.olk")
     parser.add_argument("--guests-receipt", type=Path, default=PRIVATE / "ps5-guests/CONVERSION-RECEIPT.json")
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--console-eboot-dir", required=True)
+    parser.add_argument("--console-eboot-dir", default="/mnt/usb0/homebrew/Soulcalibur II")
     parser.add_argument("--asset-mode", choices=("hardlink", "copy"), default="hardlink")
     parser.add_argument("--textures", type=Path, help="legacy already-converted GameCube texture input")
     parser.add_argument("--textures-gamecube", type=Path)

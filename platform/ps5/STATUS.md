@@ -1,5 +1,15 @@
 # PS5 homebrew port
 
+Newest human retest: USB-anchor build e94e51a6... reaches paths-ready and
+game-validation-begin. The next abort maps to libc++abi abort_message; no
+exception text yet, so file-stream/locale/heap causes are not established.
+The folder blocker was proven lstat(/mnt)=EPERM and is passed in this test.
+App/asset validation now opens approved anchors directly with no-follow flags,
+without /mnt enumeration or stat-layout assumptions. The deployed artifact is
+private/ps5-app-anchor-fix-20261105; size-only USB update receipt is
+private/native-path-retest/ANCHOR-FIX-UPLOAD.json. Further diagnostics capture
+the actual C++ fatal message and parser exception. No GPU/gameplay claim.
+
 Latest retest passed early startup/diagnostics/argument handling but rejected
 the physical eboot folder during canonical-path validation. The subsequent
 SIGSYS backtrace matches the CRT exit call after that return73; it does not

@@ -10,12 +10,12 @@ import json
 from pathlib import Path
 import re
 
-from ps5_upload_usb import Wfm, sha256, plain
+from ps5_upload_usb import Wfm, sha256, plain, load_package
 
 ROOT = Path(__file__).resolve().parents[1]
 PRIVATE = ROOT / 'private'
 USB = '/mnt/usb0'
-APP = USB + '/Soulcalibur II'
+APP = USB + '/homebrew/Soulcalibur II'
 SYSTEM = APP + '/sce_sys'
 TITLE_ID = 'PPSA77024'
 CONTENT_LABEL = 'SOULCALIBUR20000'
@@ -89,10 +89,20 @@ def selected_upload(path):
             sizes.get('bytes') != value.get('uncompressed_bytes')):
         raise ValueError('upload receipt lacks complete remote size/directory verification')
     matches = [row for row in value.get('file_readbacks', []) if row.get('path') == APP + '/eboot.bin']
-    if len(matches) != 1:
-        raise ValueError('upload receipt needs exactly one verified SC2 eboot readback')
-    eboot = matches[0]
-    if (eboot.get('verified') != 'streamed-download-sha256' or
+    if len(matches) == 1:
+        eboot = matches[0]
+        if eboot.get('verified') != 'streamed-download-sha256':
+            raise ValueError('historical eboot readback is not verified')
+    elif not matches:
+        manifest = Path(value.get('manifest_path', ''))
+        _, files, _, _ = load_package(manifest, value.get('manifest_sha256', ''), USB)
+        row = next(row for row in files if row['path'] == 'homebrew/Soulcalibur II/eboot.bin')
+        eboot = dict(path=APP + '/eboot.bin', bytes=row['bytes'], sha256=row['sha256'])
+        if value.get('local_eboot_identity') != eboot:
+            raise ValueError('local eboot identity differs from authenticated selected manifest')
+    else:
+        raise ValueError('ambiguous eboot readbacks')
+    if (
             isinstance(eboot.get('bytes'), bool) or not isinstance(eboot.get('bytes'), int) or not 64 <= eboot['bytes'] <= 1024 * 1024 * 1024 or
             not re.fullmatch('[0-9a-f]{64}', str(eboot.get('sha256')))):
         raise ValueError('upload receipt eboot identity is malformed')
@@ -128,6 +138,7 @@ def main():
     parser.add_argument('--report', type=Path, required=True, help='fresh private receipt outside metadata source')
     parser.add_argument('--server', default='http://192.168.1.23:8888')
     parser.add_argument('--task-timeout', type=int, default=300)
+    parser.add_argument('--verify', choices=('sizes', 'critical', 'all'), default='sizes')
     parser.add_argument('--execute', action='store_true')
     args = parser.parse_args()
     report = None
@@ -145,6 +156,7 @@ def main():
                       param=dict(path=str(param), bytes=param.stat().st_size, sha256=args.param_sha256),
                       remote_app=APP, title_id=TITLE_ID, content_id=CONTENT_ID, title_name=TITLE_NAME,
                       identity_status='provisional homebrew allocation; not an official Sony reservation',
+                      verification_requested=args.verify, local_eboot_identity=eboot,
                       metadata_uploaded=False, installed=False, console_launched=False, gameplay_verified=False)
         output.parent.mkdir(parents=True, exist_ok=True)
         def save(): output.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
@@ -154,7 +166,8 @@ def main():
             return 0
         entries = app_entries(wfm, eboot)
         exists = system_state(wfm, entries)
-        report['eboot_readback'] = wfm.readback(APP + '/eboot.bin', eboot['bytes'], eboot['sha256'], args.task_timeout)
+        if args.verify != 'sizes':
+            report['eboot_readback'] = wfm.readback(APP + '/eboot.bin', eboot['bytes'], eboot['sha256'], args.task_timeout)
         # Recheck source selection and absence immediately before any write.
         if sha256(upload) != upload_hash or sha256(param) != args.param_sha256:
             raise ValueError('selected upload receipt or metadata changed')
@@ -182,10 +195,16 @@ def main():
             except Exception:
                 pass
             raise
-        report['param_readback'] = wfm.readback(SYSTEM + '/param.json', size, args.param_sha256, args.task_timeout)
-        report.update(state='usb-metadata-verified', metadata_uploaded=True)
+        remote = next((row for row in wfm.listing(SYSTEM) if row.get('name') == 'param.json'), None)
+        if not remote or remote.get('type') != '-' or remote.get('size') != size:
+            raise ValueError('remote parameter type/size differs')
+        app_entries(wfm, eboot)
+        report['remote_sizes'] = dict(eboot_bytes=eboot['bytes'], param_bytes=size, verified='file-types-and-sizes')
+        if args.verify != 'sizes':
+            report['param_readback'] = wfm.readback(SYSTEM + '/param.json', size, args.param_sha256, args.task_timeout)
+        report.update(state='usb-metadata-verified', metadata_uploaded=True, verification=('local-sha256+remote-file-types-and-sizes' if args.verify == 'sizes' else 'remote-critical-sha256+file-types-and-sizes'))
         save()
-        print('New SC2 USB param.json SHA verified; eboot unchanged, no install or launch.')
+        print('New SC2 USB param.json transfer verified with selected verification mode; no install or launch.')
         return 0
     except (ValueError, OSError, KeyError, TypeError, http.client.HTTPException) as error:
         if report is not None:

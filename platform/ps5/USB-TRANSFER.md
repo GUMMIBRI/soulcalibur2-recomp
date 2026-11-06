@@ -2,14 +2,15 @@
 
 `tools/ps5_upload_usb.py` prepares a local plan by default. `--execute` performs
 an owner-authorized USB transfer through the existing PS5 Web File Manager at
-http://192.168.1.23:8888. It never launches/closes a title, exits the manager,
+http://192.168.1.23:8888. Files upload directly by default; optional --mode zip
+needs the console archive helper. It never launches/closes a title, exits the manager,
 installs a package, changes permissions, deletes preexisting files or writes under
 /data or /mnt/data. Games must already be closed and the parent must hold
 current transfer authorization; a local package alone does not confer that.
 
 ## Selected inputs and fresh destinations
 
-Require `PACKAGE-MANIFEST.json` format SC2-PRIVATE-PACKAGE-3 under private/ plus
+Require `PACKAGE-MANIFEST.json` format SC2-PRIVATE-PACKAGE-4 under private/ plus
 its independently selected SHA256 via --manifest-sha256. Every listed file is
 checked against its size/hash before network writes. The supported Xbox
 identity, converted roster hash, actual required disc files, eboot.bin and
@@ -18,9 +19,10 @@ case-colliding, save/config/cache and donor-disc paths reject. The only ISO
 permitted is the actual base Xbox disc at its declared game-files path; GC/PS2
 ISOs are not assets. Budget:30000 members/directories and12GiB source bytes.
 
-The destination must be /mnt/usb0 through /mnt/usb6. The package's recorded
-eboot path must exactly equal that root plus /Soulcalibur II. Both top-level
-`Soulcalibur II` and `soulcalibur2` folders must be absent (case-insensitively).
+The destination must be an existing numeric /mnt/usbN mount. The package's recorded
+eboot path must exactly equal that root plus /homebrew/Soulcalibur II. The exact SC2 child under homebrew
+and root soulcalibur2 must be absent (case-insensitively). Existing homebrew
+with other games is allowed and preserved; homebrew itself is never replaced.
 The tool never merges with an existing install or texture/save folder. An
 existing destination requires a separate deliberate package/path selection;
 there is no overwrite switch. USB paths are checked again at every path API.
@@ -63,7 +65,8 @@ Every streamed source is rehashed and size checked. Progress is emitted every
 Populated parent folders are created by the normal relative-path upload API.
 After that task is terminal, /api/mkdir (path plus one validated name) creates
 only missing declared empty layout folders, preserving existing directories.
-All file sizes and critical/all readback hashes are then checked as usual.
+All file types/sizes and declared directories are checked. Remote SHA readback
+is optional, selected only by --verify critical or --verify all.
 
 This mode needs only the extracted data's USB space and no local transport ZIP.
 It has no ZIP extraction, helper launch or automatic retry into existing roots.
@@ -77,17 +80,31 @@ A single derived ZIP is built locally from only manifest members and declared
 empty asset directories, streaming in1MiB blocks. Members are rehashed during
 ZIP construction. The ZIP is streamed with a fixed Content-Length; multi-GB
 assets are never memory-loaded or recopied as donor disc folders. Low-level
-upload overwrite is always0. The tool reads the uploaded ZIP back as a raw
-file and compares its exact SHA256 before requesting extraction. It rechecks
+upload overwrite is always0. With opt-in --verify critical/all the tool reads
+the uploaded ZIP back and compares SHA256 before extraction. Default --verify
+sizes checks its remote type/size without downloading it. It rechecks
 that both SC2 folders are still absent immediately before extraction.
 
 After extraction it lists each destination directory once and verifies every
-file's type/size plus all declared directories. Default --verify critical reads
-back and SHA256-checks eboot.bin, sce_sys/param.json when supplied, and the base
-executable/converted roster (or base ISO) files. --verify all reads back every
-file and costs additional network time. ZIP SHA verification establishes exact
-archive transport; default mode does not claim an independent post-extraction
-SHA for every texture. No target gameplay or installation success follows.
+file's type/size plus all declared directories. At the owner's request the
+default is --verify sizes: no archive, eboot, parameter or asset SHA download.
+Local manifest/source SHA validation and hashing during streamed upload remain
+mandatory. Reports explicitly distinguish local SHA identity from remote size
+checks; matching remote sizes do not establish matching remote hashes.
+
+Opt-in --verify critical downloads/hash-checks the transport archive (ZIP mode),
+eboot.bin, supplied param.json and selected base game files. --verify all also
+reads every remaining file. These optional modes cost additional LAN time.
+No target gameplay or installation success follows from any transfer check.
+
+The metadata supplement tool also defaults to --verify sizes. It checks actual
+eboot and new parameter file types/sizes without readback, preserves mandatory
+local parameter SHA selection and refuses an existing parameter file. Historical
+base receipts with verified eboot readbacks remain accepted. Future size-only
+base receipts record local_eboot_identity plus manifest_path/manifest_sha256;
+the supplement reloads and authenticates that local manifest and its sources.
+This authenticates the selected local baseline, not the remote bytes. Explicit
+--verify critical/all enables the supplement's old/new file SHA readbacks.
 
 Peak free-space preflight allows archive plus extracted assets on USB and one
 derived local ZIP. Local scratch/receipt must be outside the immutable package.
@@ -119,3 +136,15 @@ plan against the parent's genuine4450-file package; no fake eboot or game fixtur
 was created. This worker made no network calls or console writes,
 created no fabricated game package and did not exercise upload/extraction.
 The parent will run the actual transfer after genuine SELF/package production.
+
+
+## Current fresh USB layout (package v4)
+
+New packages declare application_relative_dir=homebrew/Soulcalibur II. The app
+is /mnt/usbN/homebrew/Soulcalibur II; assets remain /mnt/usbN/soulcalibur2.
+Active storage/saves stay beside the actual eboot. Existing unrelated homebrew
+apps are preserved. Neither SC2 child nor assets may already exist for a fresh
+upload; no merge, migration or overwrite is performed. Historical v3 artifacts
+and receipts remain historical evidence, but cannot be executed by the new
+uploader because their application layout is outdated. No new package copy or
+console transfer was produced to validate this layout change.

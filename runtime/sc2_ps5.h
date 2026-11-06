@@ -13,11 +13,19 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <limits.h>
+#include <fcntl.h>
+#include <cstdint>
+
+/* Direct imported libkernel ABI, independent of libc syscall wrappers. */
+extern "C" int sceKernelOpen(const char *, int, mode_t);
+extern "C" int sceKernelClose(int);
+extern "C" std::int64_t sceKernelRead(int, void *, std::size_t);
 
 namespace sc2 {
-/* These helpers never call realpath/readlink, canonical, absolute or CWD.
-   Reject links rather than resolving them. lstat is the actual POSIX service
-   exported by the selected libkernel; struct stat is the public SDK layout. */
+/* Never inspect protected / or /mnt, or resolve a loader CWD. Directory
+   identity is proven by successful O_DIRECTORY|O_NOFOLLOW opens. The OS-owned
+   namespace above the explicit app/asset anchor is trusted, not walked. Every
+   component at or below that anchor is checked without following a link. */
 inline bool PS5LexicalPath(const std::filesystem::path &path, std::filesystem::path &normal,
     std::string *error = nullptr)
 {
@@ -37,75 +45,11 @@ inline bool PS5LexicalPath(const std::filesystem::path &path, std::filesystem::p
     return true;
 }
 
-inline std::string PS5NativePathError(const char *why, const std::string &path,
-    int result, int nativeError, mode_t mode)
+inline bool PS5LexicalWithin(const std::filesystem::path &path, const std::filesystem::path &directory)
 {
-    const char *type = S_ISLNK(mode) ? "symlink" : S_ISDIR(mode) ? "directory" :
-        S_ISREG(mode) ? "regular" : mode ? "other" : "unknown";
-    return std::string(why) + ": lstat rc=" + std::to_string(result) +
-        " errno=" + std::to_string(nativeError) + " mode=" + std::to_string(unsigned(mode)) +
-        " type=" + type + " path=" + path;
-}
-
-inline bool PS5NativePath(const std::filesystem::path &path, std::filesystem::path &normal,
-    bool allowMissing, struct stat *info = nullptr, std::string *error = nullptr)
-{
-    if (info) *info = {};
-    if (!PS5LexicalPath(path, normal, error)) return false;
-    const auto value = normal.generic_string();
-    std::size_t start = 1, components = 0;
-    if (value == "/") {
-        struct stat status{};
-        errno = 0;
-        const int rc = ::lstat("/", &status);
-        const int nativeError = rc ? errno : 0;
-        if (rc || S_ISLNK(status.st_mode) || !S_ISDIR(status.st_mode)) {
-            if (error) *error = PS5NativePathError("invalid root", value, rc, nativeError, status.st_mode);
-            return false;
-        }
-        if (info) *info = status;
-        return true;
-    }
-    while (start < value.size()) {
-        if (++components > 128) {
-            if (error) *error = "path component limit exceeded: " + value;
-            return false;
-        }
-        auto end = value.find('/', start);
-        if (end == std::string::npos) end = value.size();
-        const auto prefix = value.substr(0, end);
-        struct stat status{};
-        errno = 0;
-        const int rc = ::lstat(prefix.c_str(), &status);
-        const int nativeError = rc ? errno : 0;
-        if (rc) {
-            // All existing parents have already been checked. Once a parent
-            // is absent, descendants cannot contain an existing symlink.
-            if (allowMissing && nativeError == ENOENT) return true;
-            if (error) *error = PS5NativePathError("native component lookup failed", prefix, rc, nativeError, status.st_mode);
-            return false;
-        }
-        if (S_ISLNK(status.st_mode) || (end < value.size() && !S_ISDIR(status.st_mode))) {
-            if (error) *error = PS5NativePathError("link or nondirectory ancestor rejected", prefix, rc, 0, status.st_mode);
-            return false;
-        }
-        if (end == value.size()) {
-            if (info) *info = status;
-            return true;
-        }
-        start = end + 1;
-    }
-    return false;
-}
-
-inline bool PS5NativeDirectory(const std::filesystem::path &path, std::filesystem::path &normal,
-    std::string *error = nullptr)
-{
-    struct stat info{};
-    if (!PS5NativePath(path, normal, false, &info, error)) return false;
-    if (S_ISDIR(info.st_mode)) return true;
-    if (error) *error = PS5NativePathError("directory required", normal.generic_string(), 0, 0, info.st_mode);
-    return false;
+    const auto base = directory.generic_string(), value = path.generic_string();
+    return value == base || (value.size() > base.size() && value.compare(0, base.size(), base) == 0 &&
+        (base == "/" || value[base.size()] == '/'));
 }
 
 inline bool PS5USBPath(const std::filesystem::path &path)
@@ -120,36 +64,20 @@ inline bool PS5USBPath(const std::filesystem::path &path)
     return i > first && (i == value.size() || value[i] == '/');
 }
 
-inline bool PS5WritablePath(const std::filesystem::path &path, std::string *error = nullptr)
+inline bool PS5AppNamespace(const std::filesystem::path &path)
 {
-    std::filesystem::path normal;
-    if (!PS5LexicalPath(path, normal, error)) return false;
-    const auto value = normal.generic_string();
-    std::filesystem::path anchor;
-    if (PS5USBPath(normal)) {
-        const auto slash = value.find('/', 8);
-        anchor = value.substr(0, slash);
-    } else if (value.compare(0, 19, "/mnt/data/homebrew/") == 0) anchor = "/mnt/data/homebrew";
-    else {
-        if (error) *error = "writable path is outside USB or /mnt/data/homebrew: " + value;
-        return false;
-    }
-    std::filesystem::path checked;
-    if (!PS5NativeDirectory(anchor, checked, error)) return false;
-    return PS5NativePath(normal, checked, true, nullptr, error);
+    const auto value = path.generic_string();
+    return PS5USBPath(path) || value.compare(0, 19, "/mnt/data/homebrew/") == 0;
 }
 
-inline bool PS5PathWithin(const std::filesystem::path &path, const std::filesystem::path &directory,
-    std::string *error = nullptr)
+inline std::filesystem::path PS5KnownAppRoot()
 {
-    std::filesystem::path root, resolved;
-    if (!PS5NativePath(directory, root, true, nullptr, error) ||
-        !PS5NativePath(path, resolved, true, nullptr, error)) return false;
-    const auto base = root.generic_string(), value = resolved.generic_string();
-    if (value == base || (value.size() > base.size() && value.compare(0, base.size(), base) == 0 &&
-        (base == "/" || value[base.size()] == '/'))) return true;
-    if (error) *error = "path containment rejected: path=" + value + " root=" + base;
-    return false;
+    // The runner retains authoritative loader/build metadata before asking
+    // for path validation. No guessed physical mapping from /app0 is used.
+    const char *retained = std::getenv("SC2_PS5_EBOOT_DIR");
+    std::filesystem::path root;
+    if (!retained || !*retained || !PS5LexicalPath(retained, root) || !PS5AppNamespace(root)) return {};
+    return root;
 }
 
 inline bool PS5AssetPath(const std::filesystem::path &path)
@@ -160,36 +88,151 @@ inline bool PS5AssetPath(const std::filesystem::path &path)
     return PS5USBPath(normal) || value == "/data" || value.compare(0, 6, "/data/") == 0;
 }
 
+inline std::filesystem::path PS5NativeAnchor(const std::filesystem::path &path)
+{
+    const auto app = PS5KnownAppRoot();
+    if (!app.empty() && PS5LexicalWithin(path, app)) return app;
+    const char *selected = std::getenv("SC2_PS5_ROOT");
+    std::filesystem::path asset;
+    if (selected && *selected && PS5LexicalPath(selected, asset) &&
+        (PS5AssetPath(asset) || (!app.empty() && PS5LexicalWithin(asset, app))) &&
+        PS5LexicalWithin(path, asset)) return asset;
+    if (PS5USBPath(path)) {
+        const auto value = path.generic_string();
+        const auto slash = value.find('/', 8);
+        const std::filesystem::path mount(value.substr(0, slash));
+        const auto standardAssets = mount / "soulcalibur2";
+        // Use the exact known asset folder when available: the application
+        // may read it while enumeration/stat of its mount parent is denied.
+        if (PS5LexicalWithin(path, standardAssets)) return standardAssets;
+        return mount;
+    }
+    const std::filesystem::path dataAssets("/data/soulcalibur2");
+    if (PS5LexicalWithin(path, dataAssets)) return dataAssets;
+    return {}; // In particular /, /mnt and virtual /app0 are not probe roots.
+}
+
+inline int PS5SceError(int result)
+{
+    const auto bits = static_cast<std::uint32_t>(result);
+    if (result >= 0) return 0;
+    return (bits & 0xffff0000u) == 0x80020000u ? int(bits & 0xffffu) : EIO;
+}
+
+inline std::string PS5NativePathError(const char *service, const char *why,
+    const std::string &path, int result, int flags = 0)
+{
+    return std::string(why) + ": " + service + " rc=" + std::to_string(result) +
+        " errno=" + std::to_string(PS5SceError(result)) + " flags=" + std::to_string(flags) + " path=" + path;
+}
+
+inline int PS5NativeOpen(const std::filesystem::path &path, bool directory, std::string *error = nullptr)
+{
+    const int flags = O_RDONLY | O_NOFOLLOW | (directory ? O_DIRECTORY : O_NONBLOCK);
+    const int fd = sceKernelOpen(path.c_str(), flags, 0);
+    if (fd < 0 && error) *error = PS5NativePathError("sceKernelOpen", "native path open failed", path.string(), fd, flags);
+    return fd;
+}
+
+inline bool PS5NativeClose(int fd, const std::filesystem::path &path, std::string *error = nullptr)
+{
+    const int rc = sceKernelClose(fd);
+    if (rc < 0 && error) *error = PS5NativePathError("sceKernelClose", "native path close failed", path.string(), rc);
+    return rc >= 0;
+}
+
+inline bool PS5NativePath(const std::filesystem::path &path, std::filesystem::path &normal,
+    bool allowMissing, std::string *error = nullptr, bool requireDirectory = false)
+{
+    if (!PS5LexicalPath(path, normal, error)) return false;
+    const auto anchor = PS5NativeAnchor(normal);
+    if (anchor.empty()) {
+        if (error) *error = "no approved native app/asset anchor for path=" + normal.string();
+        return false;
+    }
+    // The anchor itself must exist and really open as a directory. EPERM is
+    // never interpreted as a missing path or silently accepted.
+    int fd = PS5NativeOpen(anchor, true, error);
+    if (fd < 0 || !PS5NativeClose(fd, anchor, error)) return false;
+    const auto value = normal.generic_string(), base = anchor.generic_string();
+    if (value == base) return true;
+    std::size_t start = base.size() + 1, components = 0;
+    while (start < value.size()) {
+        if (++components > 128) {
+            if (error) *error = "path component limit exceeded: " + value;
+            return false;
+        }
+        auto end = value.find('/', start);
+        if (end == std::string::npos) end = value.size();
+        const std::filesystem::path prefix(value.substr(0, end));
+        fd = PS5NativeOpen(prefix, end < value.size() || requireDirectory, error);
+        if (fd < 0) {
+            // Native ENOENT is allowed only below the opened anchor and all
+            // already-verified existing parents; errors/links are not bypassed.
+            return allowMissing && PS5SceError(fd) == ENOENT;
+        }
+        if (!PS5NativeClose(fd, prefix, error)) return false;
+        if (end == value.size()) return true;
+        start = end + 1;
+    }
+    return false;
+}
+
+inline bool PS5NativeDirectory(const std::filesystem::path &path, std::filesystem::path &normal,
+    std::string *error = nullptr)
+{
+    return PS5NativePath(path, normal, false, error, true);
+}
+
+inline bool PS5NativeReadableFile(const std::filesystem::path &path, std::filesystem::path &normal)
+{
+    if (!PS5NativePath(path, normal, false)) return false;
+    const int fd = PS5NativeOpen(normal, true);
+    if (fd >= 0) { (void)PS5NativeClose(fd, normal); return false; }
+    // O_DIRECTORY must report not-a-directory; a permission or other native
+    // failure does not establish a readable file. File format is checked later.
+    return PS5SceError(fd) == ENOTDIR;
+}
+
+inline bool PS5WritablePath(const std::filesystem::path &path, std::string *error = nullptr)
+{
+    std::filesystem::path normal;
+    if (!PS5LexicalPath(path, normal, error)) return false;
+    const auto app = PS5KnownAppRoot();
+    if (app.empty() || !PS5AppNamespace(normal) || !PS5LexicalWithin(normal, app)) {
+        if (error) *error = "writable path is outside the explicit app directory: " + normal.string();
+        return false;
+    }
+    std::filesystem::path checked;
+    return PS5NativePath(normal, checked, true, error);
+}
+
+inline bool PS5PathWithin(const std::filesystem::path &path, const std::filesystem::path &directory,
+    std::string *error = nullptr)
+{
+    std::filesystem::path root, resolved;
+    if (!PS5NativePath(directory, root, true, error) || !PS5NativePath(path, resolved, true, error)) return false;
+    if (PS5LexicalWithin(resolved, root)) return true;
+    if (error) *error = "path containment rejected: path=" + resolved.string() + " root=" + root.string();
+    return false;
+}
+
 inline std::vector<std::filesystem::path> PS5ContentRoots(const std::filesystem::path &knownEboot = {})
 {
     std::vector<std::filesystem::path> roots;
     const char *overrideRoot = std::getenv("SC2_PS5_ROOT");
-    std::filesystem::path eboot = knownEboot;
-    if (eboot.empty()) {
-        const char *retained = std::getenv("SC2_PS5_EBOOT_DIR");
-        if (retained && *retained) eboot = retained;
+    std::filesystem::path eboot = knownEboot.empty() ? PS5KnownAppRoot() : knownEboot;
+    std::filesystem::path checked;
+    if (!eboot.empty() && (!PS5NativeDirectory(eboot, checked) || !PS5WritablePath(checked))) eboot.clear();
+    else if (!eboot.empty()) eboot = checked;
+    // Never enumerate/stat /mnt. Probe only these bounded known USB asset
+    // anchors, plus explicit metadata roots (which may name another usbN).
+    for (unsigned mount = 0; mount < 8; ++mount) {
+        const auto assets = std::filesystem::path("/mnt/usb" + std::to_string(mount)) / "soulcalibur2";
+        if (PS5NativeDirectory(assets, checked)) roots.push_back(checked);
     }
-    std::error_code ec;
-    if (!eboot.empty()) {
-        std::filesystem::path checked;
-        if (!PS5NativeDirectory(eboot, checked) || !PS5WritablePath(checked)) eboot.clear();
-        else eboot = checked;
-    }
-    for (std::filesystem::directory_iterator it("/mnt", ec), end; !ec && it != end; it.increment(ec)) {
-        const auto mount = it->path();
-        std::error_code entryError;
-        if (PS5USBPath(mount) && it->is_directory(entryError)) {
-            // The console also exposes empty read-only usbN mount points.
-            const auto permissions = it->status(entryError).permissions();
-            const auto writes = std::filesystem::perms::owner_write | std::filesystem::perms::group_write |
-                std::filesystem::perms::others_write;
-            if (!entryError && ((permissions & writes) != std::filesystem::perms::none ||
-                std::filesystem::is_directory(mount / "soulcalibur2", entryError)))
-                roots.push_back(mount / "soulcalibur2");
-        }
-    }
-    std::sort(roots.begin(), roots.end());
-    roots.emplace_back("/data/soulcalibur2");
+    const std::filesystem::path dataAssets("/data/soulcalibur2");
+    if (PS5NativeDirectory(dataAssets, checked)) roots.push_back(checked);
     if (!eboot.empty()) roots.insert(roots.begin(), eboot / "soulcalibur2");
     if (overrideRoot && *overrideRoot && (PS5AssetPath(overrideRoot) ||
         (!eboot.empty() && PS5PathWithin(overrideRoot, eboot)))) {
@@ -233,8 +276,8 @@ inline bool PS5DdsFile(const std::filesystem::path &file, const std::filesystem:
 {
     auto extension = file.extension().string();
     for (auto &c : extension) if (c >= 'A' && c <= 'Z') c = char(c - 'A' + 'a');
-    std::error_code ec;
-    return extension == ".dds" && PS5PathWithin(file, root) && std::filesystem::is_regular_file(file, ec);
+    std::filesystem::path checked;
+    return extension == ".dds" && PS5PathWithin(file, root) && PS5NativeReadableFile(file, checked);
 }
 
 inline std::string PS5TextureRoot()
@@ -269,26 +312,31 @@ inline std::filesystem::path PS5AssetFile(const std::filesystem::path &file,
     const std::filesystem::path &root)
 {
     std::filesystem::path resolved;
-    struct stat info{};
-    if (!PS5NativePath(file, resolved, false, &info) || !PS5PathWithin(resolved, root) || !S_ISREG(info.st_mode)) return {};
+    if (!PS5NativeReadableFile(file, resolved) || !PS5PathWithin(resolved, root)) return {};
     return resolved;
 }
 
 inline bool PS5RosterStamp(const std::filesystem::path &file)
 {
-    const auto stampPath = file.string() + ".version";
+    const auto stampPath = std::filesystem::path(file.string() + ".version");
     std::filesystem::path checked;
-    struct stat info{};
-    if (!PS5NativePath(stampPath, checked, false, &info) || !S_ISREG(info.st_mode) ||
-        info.st_size < 0 || info.st_size > 64 || !PS5PathWithin(checked, file.parent_path())) return false;
-    std::ifstream stamp(checked, std::ios::binary);
-    char line[32] = {};
-    if (!stamp.getline(line, sizeof line)) return false;
-    const auto length = std::strlen(line);
-    if (length && line[length - 1] == '\r') line[length - 1] = 0;
-    // The current converter's version is2; a different schema needs an
-    // explicitly reviewed runtime/converter update, not guessed compatibility.
-    return std::strcmp(line, "sc2-guests 2") == 0;
+    if (!PS5NativeReadableFile(stampPath, checked) || !PS5PathWithin(checked, file.parent_path())) return false;
+    const int fd = PS5NativeOpen(checked, false);
+    if (fd < 0) return false;
+    char text[65] = {};
+    std::size_t size = 0;
+    bool ok = true;
+    while (size < sizeof text) {
+        const auto got = sceKernelRead(fd, text + size, sizeof text - size);
+        if (got < 0 || std::uint64_t(got) > sizeof text - size) { ok = false; break; }
+        if (!got) break;
+        size += std::size_t(got);
+    }
+    if (!PS5NativeClose(fd, checked) || !ok || size > 64) return false;
+    if (size && text[size - 1] == '\n') --size;
+    if (size && text[size - 1] == '\r') --size;
+    static const char current[] = "sc2-guests 2";
+    return size == sizeof current - 1 && !std::memcmp(text, current, size);
 }
 
 inline std::string PS5GuestRoster(const std::string &xbe = {}, const std::string &disc = {})
@@ -366,6 +414,20 @@ inline bool PS5LaunchPaths(std::string &xbe, std::string &disc,
     }
     if (eboot.empty() || !eboot.is_absolute()) {
         error = "cannot locate the eboot folder; loader must supply an absolute executable path or SC2_PS5_EBOOT_DIR";
+        return false;
+    }
+    // Retain explicit metadata before probing, so the exact permitted app
+    // root becomes the anchor instead of its protected namespace ancestors.
+    // The following native open still has to prove that it exists as a real
+    // no-follow directory; publishing metadata is not a successful probe.
+    std::filesystem::path lexicalEboot;
+    if (!PS5LexicalPath(eboot, lexicalEboot, &error) || !PS5AppNamespace(lexicalEboot)) {
+        error = "eboot metadata must name an approved physical USB/homebrew directory: " + eboot.string();
+        return false;
+    }
+    eboot = lexicalEboot;
+    if ((!overrideEboot || !*overrideEboot) && setenv("SC2_PS5_EBOOT_DIR", eboot.string().c_str(), 1) != 0) {
+        error = "cannot retain explicit eboot metadata before native validation";
         return false;
     }
     std::filesystem::path checkedEboot;

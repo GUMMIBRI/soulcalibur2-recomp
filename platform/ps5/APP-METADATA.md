@@ -23,7 +23,7 @@ USB upload receipt. The receipt must account for every package file, all remote
 sizes/directories and a streamed SHA256 readback of the SC2 eboot. An in-progress
 or failed transfer cannot enter this route.
 
-The fixed destination is /mnt/usb0/Soulcalibur II/sce_sys/param.json. The tool
+The fixed destination is /mnt/usb0/homebrew/Soulcalibur II/sce_sys/param.json. The tool
 rechecks the actual eboot type/size and streams it back to compare the base
 transfer SHA before any metadata write. It requires param.json to be absent,
 checks source hashes again, creates sce_sys only if absent using the observed
@@ -80,3 +80,15 @@ A failed installer may retain staging/retry state. Adding the missing source
 icon alone does not prove that state was cleared or that a retry succeeded.
 Any scoped recovery and further installation remain with the project lead and
 human tester; this validation performs no console calls or cache deletion.
+
+
+## Current fresh USB layout (package v4)
+
+New packages declare application_relative_dir=homebrew/Soulcalibur II. The app
+is /mnt/usbN/homebrew/Soulcalibur II; assets remain /mnt/usbN/soulcalibur2.
+Active storage/saves stay beside the actual eboot. Existing unrelated homebrew
+apps are preserved. Neither SC2 child nor assets may already exist for a fresh
+upload; no merge, migration or overwrite is performed. Historical v3 artifacts
+and receipts remain historical evidence, but cannot be executed by the new
+uploader because their application layout is outdated. No new package copy or
+console transfer was produced to validate this layout change.
