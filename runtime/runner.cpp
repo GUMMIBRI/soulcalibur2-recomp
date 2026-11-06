@@ -1225,10 +1225,20 @@ int main(int argc, char **argv)
         std::string error;
         const std::string executable = argc > 0 && argv && argv[0] &&
             std::filesystem::path(argv[0]).is_absolute() ? argv[0] : "";
+#if defined(SC2_PS5_INSTALL_ROOT)
+        // The build/transfer operator selected this exact install folder. It
+        // is explicit metadata for argc-zero application loaders, not CWD.
+        const bool physicalExecutable = !executable.empty() &&
+            sc2::PS5WritablePath(std::filesystem::path(executable).parent_path());
+        if (!physicalExecutable && !std::getenv("SC2_PS5_EBOOT_DIR"))
+            setenv("SC2_PS5_EBOOT_DIR", SC2_PS5_INSTALL_ROOT, 0);
+#endif
         if (!sc2::PS5LaunchPaths(xbePath, discImage, storageRoot, settingsPath, error, executable)) {
             std::cerr << "recomp runner: " << error << '\n';
             return 73;
         }
+        if (guests.empty() && guestLink.empty() && guestHeihachi.empty())
+            guests = sc2::PS5GuestRoster(xbePath, discImage);
         const auto requests = std::filesystem::path(settingsPath).parent_path() / "shader-requests";
         setenv("SC2_PS5_SHADER_REQUESTS", requests.string().c_str(), 1);
         // The shared screenshot writer otherwise falls back to HOME/Pictures,
@@ -1464,7 +1474,12 @@ int main(int argc, char **argv)
     const RecompMemoryRegion region = {0u, memory.size(), memory.data()};
     recomp_runtime_init(&region, 1u, nullptr, 0u, nullptr, 0u);
     if (!guests.empty()) {
-        if (!sc2::ApplyGuestRoster(guests.c_str())) std::cerr << "recomp runner: " << guests << " is not a guests' root.olk\n";
+        if (!sc2::ApplyGuestRoster(guests.c_str())) {
+            std::cerr << "recomp runner: " << guests << " is not a guests' root.olk\n";
+#if defined(SC2_PS5)
+            return 2; // Do not start with a selected roster that failed initialization.
+#endif
+        }
     } else if (!guestLink.empty()) sc2::ApplyGuestLink();
     else if (!guestHeihachi.empty()) sc2::ApplyGuestHeihachi();
     recomp_runtime_set_lookup(recomp_program_lookup);

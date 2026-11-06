@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Link real host objects with console SDL GPU/RADV into an ELF object.
+"""Link actual PS5 host/guest objects with public SDL GPU/RADV services.
 
-This is a relocatable link, not a runnable payload. All remaining unresolved
-symbols are recorded so SDK/runtime integration can proceed without fake stubs.
-No generated game program, network access, deployment or console run is needed.
+Default output is relocatable; explicit modes select a strict shared host,
+payload-loader executable, or native application PIE for later SCE conversion.
+Executable modes require authenticated original guest objects. No deployment
+or target execution is performed and no missing game bodies are invented.
 """
 import argparse
 import hashlib
@@ -14,7 +15,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from ps5_compile_host import validate_object
+from ps5_compile_host import validate_object, compile_record
 
 ROOT = Path(__file__).resolve().parents[1]
 PLATFORM_OBJECTS = (
@@ -48,6 +49,29 @@ def run(command):
                           text=True, errors="replace")
 
 
+def application_crt(sdk, llvm):
+    """Compile/reuse the licensed native application entry, never payload CRT."""
+    source = ROOT / "platform/ps5/app/app_crt.cpp"
+    obj = ROOT / "private/ps5-host-objects/sc2_app_crt.o"
+    obj.parent.mkdir(parents=True, exist_ok=True)
+    compiler = llvm.resolve() / ("clang++.exe" if sys.platform == "win32" else "clang++")
+    sdk = sdk.resolve()
+    command = [str(compiler), "--target=x86_64-sie-ps5", "-DSC2_PS5=1", "-isysroot", str(sdk),
+               "-isystem", str(sdk / "target/include/c++/v1"), "-isystem", str(sdk / "target/include"),
+               "-O2", "-std=c++17", "-fPIC", "-fno-stack-protector", "-femulated-tls",
+               "-fno-exceptions", "-fno-rtti", "-c", str(source), "-o", str(obj)]
+    try:
+        previous = json.loads(obj.with_suffix(".object.json").read_text(encoding="utf-8"))
+        validate_object(previous, sdk, command)
+        return obj
+    except (ValueError, OSError, KeyError, TypeError):
+        pass
+    row = compile_record(source, obj, command, sdk, obj.with_suffix(".log"))
+    if row["exit_code"] or not row["object"]:
+        raise ValueError("application CRT compile failed; see " + row["log"])
+    return obj
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--llvm", type=Path, required=True, help="LLVM bin directory")
@@ -61,8 +85,10 @@ def main():
                         help="successful target shaderc build receipt matching the exact archive")
     parser.add_argument("--platform-library", type=Path,
                         help="optional real public platform support archive; never a generated stub")
-    parser.add_argument("--payload", action="store_true", help="link real SDK CRT executable; requires authenticated guest objects")
-    parser.add_argument("--strict-shared", action="store_true",
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--payload", action="store_true", help="link real SDK payload CRT; requires authenticated guest objects")
+    modes.add_argument("--application", action="store_true", help="link native application CRT/layout for later SCE conversion")
+    modes.add_argument("--strict-shared", action="store_true",
                         help="attempt a host shared module with --no-undefined; not a game payload")
     parser.add_argument("--object", type=Path, action="append", dest="objects")
     parser.add_argument("--extra-object", type=Path, action="append", default=[],
@@ -71,8 +97,9 @@ def main():
     parser.add_argument("--full-runner", action="store_true",
                         help="include actual runner/adapter/game objects; generated guest still required")
     args = parser.parse_args()
-    if args.payload and (not args.full_runner or not args.guest_receipt or not args.xbe or args.strict_shared):
-        parser.error("--payload requires --full-runner --guest-receipt --xbe and excludes --strict-shared")
+    executable_mode = args.payload or args.application
+    if executable_mode and (not args.full_runner or not args.guest_receipt or not args.xbe):
+        parser.error("--payload/--application requires --full-runner --guest-receipt --xbe")
     suffix = ".exe" if sys.platform == "win32" else ""
     linker = args.llvm / ("ld.lld" + suffix)
     nm = args.llvm / ("llvm-nm" + suffix)
@@ -86,7 +113,7 @@ def main():
     if args.shaderc_library:
         archives.append(args.shaderc_library.resolve())
     imports = [sdk_lib / name for name in (
-        "libkernel_web.so", "libSceLibcInternal.so", "libSceNet.so",
+        "libkernel.so" if args.application else "libkernel_web.so", "libSceLibcInternal.so", "libSceNet.so",
         "libSceAgc.so", "libSceAgcDriver.so", "libSceVideoOut.so",
         "libSceAudioOut.so", "libScePad.so", "libSceUserService.so",
         "libSceSystemService.so", "libSceSysmodule.so")]
@@ -109,7 +136,7 @@ def main():
     if args.guest_receipt:
         if not args.full_runner or not args.xbe:
             parser.error("--guest-receipt requires --full-runner and --xbe")
-        from ps5_compile_guest import authenticate, private_path
+        from ps5_compile_guest import authenticate, private_path, validate_guest_source
         try:
             report = json.loads(private_path(args.guest_receipt).read_text(encoding="utf-8"))
             lift, members = authenticate(Path(report["program"]), args.xbe)
@@ -124,6 +151,7 @@ def main():
                 raise ValueError("guest receipt must contain exactly every generated translation unit")
             for row in rows:
                 validate_object(row, args.sdk)
+                validate_guest_source(row, Path(report["program"]), members, lift)
                 obj = private_path(Path(row["object"]))
                 if row["exit_code"] or digest(Path(row["source"])) != row["sha256"] or digest(obj) != row["object_sha256"]:
                     raise ValueError("guest source/object differs from compiled receipt")
@@ -135,15 +163,24 @@ def main():
                 raise ValueError("guest forced math header changed; recompile the guest")
         except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError) as error:
             parser.error(str(error))
+    app_inputs = []
+    if args.application:
+        try:
+            units.append(application_crt(args.sdk, args.llvm))
+        except (ValueError, OSError) as error:
+            parser.error(str(error))
+        app_inputs = [ROOT / ("platform/ps5/app/" + name) for name in
+                      ("app_crt.cpp", "ps5-pie.ld", "ps5-pie-unwind.ld", "app-symbols.map", "SOURCE.json")]
     units = list(dict.fromkeys(path.resolve() for path in units))
     # Every selected object, including renderer/kernel and --extra-object inputs,
     # must have the dependency-tracked receipt produced by the actual compiler.
     # Old manifests cannot prove header freshness or native-compiler selection.
     object_records = []
+    verified_dependencies = set()
     try:
         for obj in units:
             row = json.loads(obj.with_suffix(".object.json").read_text(encoding="utf-8"))
-            validate_object(row, args.sdk)
+            validate_object(row, args.sdk, validated_dependencies=verified_dependencies)
             if Path(row["object"]).resolve() != obj:
                 raise ValueError(f"object receipt selects another file: {obj}")
             if not {"--target=x86_64-sie-ps5", "-DSC2_PS5=1"}.issubset(row["command"]):
@@ -172,7 +209,7 @@ def main():
                     raise ValueError("native shader compiler object used headers from another shaderc build")
     except (ValueError, OSError, KeyError, TypeError) as error:
         parser.error(f"recompile stale/untracked input: {error}")
-    for path in [linker, nm, sdl, radv, *units, *archives, *imports]:
+    for path in [linker, nm, sdl, radv, *units, *archives, *imports, *app_inputs]:
         if not path.is_file():
             parser.error(f"missing link input: {path}")
     # SDL's public GPU API also exists in the software-only archive. Require its
@@ -184,17 +221,25 @@ def main():
             parser.error(f"{path} does not provide required backend symbol {symbol}")
     out = ROOT / "private/ps5-gpu-link"
     out.mkdir(parents=True, exist_ok=True)
-    linked = out / ("eboot.elf" if args.payload else "sc2-runner.so" if args.full_runner and args.strict_shared else
+    linked = out / ("sc2-app.elf" if args.application else "eboot.elf" if args.payload else "sc2-runner.so" if args.full_runner and args.strict_shared else
                     "sc2-gpu-host.so" if args.strict_shared else "sc2-gpu-platform.o")
     linked.unlink(missing_ok=True)
     command = [linker, "-L", sdk_lib, "--wrap=fflush", "--wrap=fclose",
-               *( ["-pie", "--no-undefined", "-e", "_start", "-z", "max-page-size=0x4000", "--hash-style=gnu"] if args.payload else
+               *( ["-pie", "--no-undefined", "-e", "_start", "-z", "max-page-size=0x4000", "--hash-style=gnu"] if executable_mode else
                   ["-shared", "--no-undefined"] if args.strict_shared else ["-r"] ),
                "--start-group", *units, sdl, radv, *archives,
                "--end-group", "-o", linked]
     if args.full_runner:
         command.append("--error-limit=0")
-    if args.strict_shared or args.payload:
+    crt_inputs = []
+    if args.application:
+        app = ROOT / "platform/ps5/app"
+        # This CRT runs the constructor/finalizer arrays. Do not mix the SDK's
+        # payload crt1 or another CRT's _init/_fini into the application.
+        command.extend(["--no-dynamic-linker", "--gc-sections", "--exclude-libs=ALL",
+                        "--version-script=" + str(app / "app-symbols.map"), "-L", app,
+                        "-T", app / "ps5-pie-unwind.ld", "--eh-frame-hdr", *imports])
+    elif args.strict_shared or args.payload:
         # Real import libraries are legitimate inputs to a shared-module link,
         # but cannot be embedded into ld -r output. No fake main is introduced.
         crt_begin = sdk_lib / ("crtbegin.o" if args.payload else "crtbeginS.o")
@@ -203,17 +248,27 @@ def main():
         for crt in (crt_begin, crt_end, *startup):
             if not crt.is_file():
                 parser.error(f"missing shared-module CRT input: {crt}")
+        crt_inputs = [*startup, crt_begin, crt_end]
         command.extend([*startup, crt_begin, *imports, crt_end])
         layout = args.sdk.resolve() / "ldscripts/elf_x86_64.x"
         if not layout.is_file():
             parser.error(f"missing public SDK linker layout: {layout}")
         command.extend(["-T", layout, "--eh-frame-hdr"])
     done = run(command)
-    if args.payload and done.returncode == 0:
-        from ps5_package import executable_elf
-        executable_elf(linked)
-    log_name = "payload-link.log" if args.payload else "strict-runner-link.log" if args.full_runner and args.strict_shared else "strict-link.log" if args.strict_shared else "link.log"
-    (out / log_name).write_text(done.stdout + done.stderr, encoding="utf-8")
+    shape_error = None
+    if executable_mode and done.returncode == 0:
+        try:
+            if args.application:
+                from ps5_finalize_payload import preflight
+                preflight(linked, nm)
+            else:
+                from ps5_package import executable_elf
+                executable_elf(linked)
+        except (ValueError, OSError, subprocess.SubprocessError) as error:
+            shape_error = str(error)
+    link_success = done.returncode == 0 and shape_error is None
+    log_name = "application-link.log" if args.application else "payload-link.log" if args.payload else "strict-runner-link.log" if args.full_runner and args.strict_shared else "strict-link.log" if args.strict_shared else "link.log"
+    (out / log_name).write_text(done.stdout + done.stderr + ("\nApplication/ELF preflight failed: " + shape_error if shape_error else ""), encoding="utf-8")
     unresolved, weak = [], []
     if done.returncode == 0:
         names = run([nm, "--undefined-only", "--format=posix", linked])
@@ -222,7 +277,7 @@ def main():
         rows = [line.split() for line in names.stdout.splitlines()]
         unresolved = sorted({row[0] for row in rows if len(row) > 1 and row[1] == "U"})
         weak = sorted({row[0] for row in rows if len(row) > 1 and row[1] in ("w", "v")})
-        unresolved_name = "payload-unresolved.txt" if args.payload else "strict-runner-unresolved.txt" if args.full_runner and args.strict_shared else "strict-unresolved.txt" if args.strict_shared else "unresolved.txt"
+        unresolved_name = "application-unresolved.txt" if args.application else "payload-unresolved.txt" if args.payload else "strict-runner-unresolved.txt" if args.full_runner and args.strict_shared else "strict-unresolved.txt" if args.strict_shared else "unresolved.txt"
         (out / unresolved_name).write_text("\n".join(unresolved) + "\n", encoding="utf-8")
     providers = {}
     for library in imports:
@@ -233,37 +288,43 @@ def main():
             providers.setdefault(name, []).append(str(library))
     imported = {name: providers[name] for name in unresolved if name in providers}
     remaining = [name for name in unresolved if name not in providers]
-    receipt = dict(command=[str(x) for x in command], exit_code=done.returncode,
+    receipt = dict(command=[str(x) for x in command], exit_code=done.returncode if not shape_error else 1,
+                   shape_error=shape_error,
                    object_receipt_schema="sc2.ps5-object.v2",
                    object_commands=[dict(object=row["object"], command_sha256=row["command_sha256"])
                                     for row in object_records],
                    unresolved_link_errors=re.findall(r"undefined symbol: ([^\r\n]+)", done.stderr),
                    inputs=[dict(path=str(x.resolve()), sha256=digest(x))
-                           for x in [*units, sdl, radv, *archives, *imports]],
+                           for x in [*units, sdl, radv, *archives, *imports, *crt_inputs, *app_inputs]],
                    sdk=str(args.sdk.resolve()),
                    platform_library=str(args.platform_library.resolve()) if args.platform_library else None,
-                   relocatable_link_succeeded=done.returncode == 0 and not args.strict_shared and not args.payload,
-                   strict_shared_link_succeeded=done.returncode == 0 and args.strict_shared,
-                   fully_linked=args.payload and done.returncode == 0 and not remaining, executed=False, unresolved=unresolved,
+                   relocatable_link_succeeded=link_success and not args.strict_shared and not executable_mode,
+                   strict_shared_link_succeeded=link_success and args.strict_shared,
+                   fully_linked=executable_mode and link_success and not remaining,
+                   application_abi="sc2.ps5-application.v1" if args.application else None,
+                   output=dict(path=str(linked.resolve()), sha256=digest(linked), bytes=linked.stat().st_size) if link_success else None,
+                   executed=False, unresolved=unresolved,
                    sdk_import_coverage=imported, unresolved_without_sdk_import=remaining,
                    optional_weak_symbols=weak,
                    unresolved_gpu_api=[x for x in unresolved if x.startswith(("SDL_", "vk_", "vkCreate"))])
-    receipt_name = "payload-receipt.json" if args.payload else "strict-runner-receipt.json" if args.full_runner and args.strict_shared else "strict-receipt.json" if args.strict_shared else "receipt.json"
+    receipt_name = "application-receipt.json" if args.application else "payload-receipt.json" if args.payload else "strict-runner-receipt.json" if args.full_runner and args.strict_shared else "strict-receipt.json" if args.strict_shared else "receipt.json"
     (out / receipt_name).write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
-    if done.returncode:
-        print(done.stderr, file=sys.stderr)
+    if not link_success:
+        print(shape_error or done.stderr, file=sys.stderr)
     else:
-        print(f"{'Payload ELF' if args.payload else 'Shared host module' if args.strict_shared else 'Relocatable GPU link'}: {linked}; "
+        print(f"{'Application PIE' if args.application else 'Payload ELF' if args.payload else 'Shared host module' if args.strict_shared else 'Relocatable GPU link'}: {linked}; "
               f"{len(unresolved)} strong undefined symbols, {len(imported)} provided by SDK imports, "
               f"{len(remaining)} without an SDK import provider.")
-        print(("Payload linked, not deployed or executed. See " if args.payload else "No game payload linked or executed. See ") + receipt_name + " and " + unresolved_name + ".")
+        print(("Application/payload linked, not deployed or executed. See " if executable_mode else "No game payload linked or executed. See ") + receipt_name + " and " + unresolved_name + ".")
     # A successful -r invocation is insufficient if the actual GPU boundary
     # still has missing strong APIs. Keep SDK/game-runtime unresolved symbols
     # visible in the receipt without pretending this is a final payload link.
     if done.returncode == 0 and receipt["unresolved_gpu_api"]:
         print("Strong GPU API symbols remain unresolved; see receipt.json.", file=sys.stderr)
         return 2
-    return done.returncode
+    if executable_mode and remaining:
+        return 2
+    return done.returncode if not shape_error else 1
 
 
 if __name__ == "__main__":

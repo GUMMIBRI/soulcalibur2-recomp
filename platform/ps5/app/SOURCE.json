@@ -1,0 +1,27 @@
+{
+  "repository": "https://github.com/SynoPiia/PSXS5",
+  "revision": "5c17ea31aec5791c12451e915386fa98d670adb4",
+  "license": "GPL-3.0-or-later",
+  "files": [
+    {
+      "path": "app_crt.cpp",
+      "source": "tooling/native/app_crt.cpp",
+      "sha256": "a99fe406e36d8ce82e68e0245898ba064e28a56a9853f746e9cf13d23cc17a00"
+    },
+    {
+      "path": "ps5-pie.ld",
+      "source": "tooling/native/ps5-pie.ld",
+      "sha256": "fbc52518761b58b703a2225c847c5f44a81523cd0e751755adf890ae0f0dd74c"
+    },
+    {
+      "path": "app-symbols.map",
+      "source": "tooling/native/app-symbols.map",
+      "sha256": "f3e1e4694ad55538a0833555213eb6eeee8eb08a1085650bb9ea16c3c49f8d1e"
+    },
+    {
+      "path": "ps5-pie-unwind.ld",
+      "source": "tooling/psbc/ps5-pie-unwind.ld",
+      "sha256": "fed519884d92e96b079e6b2b3421de06d192be474dd323e7e2b35ac25478adbf"
+    }
+  ]
+}

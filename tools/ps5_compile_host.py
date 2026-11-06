@@ -111,7 +111,7 @@ def dependency_records(depfile):
     return result
 
 
-def validate_object(row, sdk=None, command=None):
+def validate_object(row, sdk=None, command=None, validated_dependencies=None):
     """Reject legacy, modified or stale real compile outputs; no compilation."""
     if row.get("schema") != "sc2.ps5-object.v2" or row.get("exit_code") != 0:
         raise ValueError("object needs a dependency-tracked compile receipt")
@@ -128,11 +128,18 @@ def validate_object(row, sdk=None, command=None):
     if not row.get("dependencies"):
         raise ValueError("object receipt has no compiler dependency graph")
     for item in row["dependencies"]:
+        identity = (item["path"], item["origin"], item["sha256"])
+        # A link admission pass owns a frozen set of inputs. Validate each
+        # distinct expected dependency once; different hashes still reject.
+        if validated_dependencies is not None and identity in validated_dependencies:
+            continue
         origin = dependency_origin(item["path"])
         if origin.resolve() != Path(item["origin"]).resolve():
             raise ValueError(f"dependency override selection changed: {item['path']}")
         if digest(item["path"]) != item["sha256"] or digest(origin) != item["sha256"]:
             raise ValueError(f"object dependency changed: {origin}")
+        if validated_dependencies is not None:
+            validated_dependencies.add(identity)
     return row
 
 
@@ -241,6 +248,7 @@ def main():
     parser.add_argument("--only", action="append", help="compile only these source basenames (repeatable)")
     parser.add_argument("--group", choices=("host", "kernel", "runner", "adapters", "game"), default="host",
                         help="actual upstream target source group; no guest substitutes")
+    parser.add_argument("--eboot-dir", help="explicit PS5 test-install directory embedded in runner startup")
     parser.add_argument("--xbe-sha256", default="7ce12851850ab46766f77c612b251afe7c8bd81f879e11b4836bdf766be542c6",
                         help="expected USA executable metadata for runner compile; does not validate any game input")
     args = parser.parse_args()
@@ -267,6 +275,11 @@ def main():
               "-I", str(merged.parent / "xbe")]
     if args.group == "runner":
         common.append('-DRECOMP_XBE_SHA256="' + args.xbe_sha256 + '"')
+        if args.eboot_dir:
+            if (not re.fullmatch(r"/mnt/(?:usb[0-9]+|data/homebrew)/[^\r\n]+", args.eboot_dir) or
+                    any(part in (".", "..") for part in args.eboot_dir.split("/"))):
+                parser.error("--eboot-dir must be an explicit USB or installed-homebrew directory")
+            common.append("-DSC2_PS5_INSTALL_ROOT=" + json.dumps(args.eboot_dir))
     if args.shaderc_include:
         if not (args.shaderc_include / "shaderc/shaderc.h").is_file():
             parser.error("--shaderc-include must contain shaderc/shaderc.h")

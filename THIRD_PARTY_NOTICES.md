@@ -64,3 +64,16 @@ upstream license files (Apache-2.0 and the glslang notices) are preserved in
 platform/ps5/shaderc/DEPENDENCY-LICENSES.txt. Sources/libraries are built locally
 under ignored private/; no proprietary shader compiler is used. See that
 folder's README.md for build provenance and integration limits.
+
+## PS5 application startup and public native layout
+
+The PS5 fork uses the GPL-3.0-or-later application startup and linker layout
+from https://github.com/SynoPiia/PSXS5 at
+5c17ea31aec5791c12451e915386fa98d670adb4. Original notices credit
+BlackBearReloaded (native application boilerplate) and Mihawk-99 (unwind layout).
+Unmodified files, exact source paths/hashes and the full GPL license are retained
+under platform/ps5/app/. The public native conversion tool is supplied by path,
+not redistributed with game assets; its exact reviewed hash is recorded by the
+private finalization receipt. No Sony proprietary SDK or retail game code is
+included in this source contribution. These PS5-specific changes stay in the
+user's fork; they are not submitted to the upstream PC port.

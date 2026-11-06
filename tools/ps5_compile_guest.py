@@ -8,9 +8,11 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import re
+from concurrent.futures import ThreadPoolExecutor
 
 import build_game
-from ps5_compile_host import merged_sources, compile_record
+from ps5_compile_host import merged_sources, compile_record, validate_object
 
 ROOT = Path(__file__).resolve().parents[1]
 PRIVATE = ROOT / "private"
@@ -58,8 +60,11 @@ def authenticate(program, xbe):
         raise ValueError("uninitialized EBP prologues must be fixed in the lifter, not hidden in the build")
     manual = program / "manual_functions.json"
     expected_manual = (json.dumps([f"0x{a:08X}" for a in build_game.bound_addresses()], indent=0) + "\n").encode()
-    expected_hash = hashlib.sha256(expected_manual).hexdigest()
-    if digest(manual) != expected_hash or receipt.get("manual_sha256") != expected_hash:
+    # The existing Windows lifter receipt authenticates CRLF bytes. Compare
+    # current binding text after normal newline decoding, while still requiring
+    # the exact original file bytes to match the recorded lift hash.
+    if (manual.read_text(encoding="utf-8") != expected_manual.decode("utf-8") or
+            digest(manual) != receipt.get("manual_sha256")):
         raise ValueError("runtime manual bindings differ from the lift; regenerate it")
     return receipt, members
 
@@ -81,13 +86,109 @@ def stage_members(members, directory):
     return directory
 
 
+def dispatch_transform(program, members, receipt):
+    """Derive fallback entries only for real translated bodies, never HLE stubs."""
+    original = next(p for p in members if p.name == "recomp_dispatch.c")
+    data = original.read_bytes()
+    manual = {int(value, 16) for value in json.loads((program / "manual_functions.json").read_text())}
+    if len(manual) != 99:
+        raise ValueError("manual dispatch filter v1 requires the authenticated current 99 bindings")
+    table_pattern = rb"(?ms)^static const recomp_entry_t g_recomp_table\[\] = \{\r?\n(.*?)^\};"
+    tables = list(re.finditer(table_pattern, data))
+    if len(tables) != 1:
+        raise ValueError("unsupported generated dispatch table declaration")
+    table = tables[0]
+    lines = table.group(1).splitlines(keepends=True)
+    row_pattern = rb"    \{ 0x([0-9A-F]{8})u, \(recomp_func_t\)(sub_[0-9A-F]{8}|xbe_entry_point) \},\r?\n"
+    addresses, kept, removed, symbols = [], [], [], {}
+    for line in lines:
+        match = re.fullmatch(row_pattern, line)
+        if not match:
+            raise ValueError("unsupported generated dispatch row; refusing a partial transform")
+        address = int(match.group(1), 16)
+        symbol = match.group(2)
+        if symbol != b"sub_" + match.group(1) and not (
+                symbol == b"xbe_entry_point" and address == 0x00105423):
+            raise ValueError("unexpected generated dispatch function/address mapping")
+        symbols[address] = symbol
+        addresses.append(address)
+        if address in manual:
+            removed.append(address)
+        else:
+            kept.append(line)
+    if addresses != sorted(set(addresses)) or set(removed) != manual or len(removed) != 99:
+        raise ValueError("generated dispatch does not contain exactly the current 99 manual entries")
+    definitions = set()
+    for member in members:
+        if member.name != "recomp_dispatch.c" and member.suffix == ".c":
+            definitions.update(re.findall(
+                rb"(?m)^void[ \t]+(sub_[0-9A-F]{8}|xbe_entry_point)\(void\)\r?\n\{", member.read_bytes()))
+    missing = {address for address in addresses if symbols[address] not in definitions}
+    if missing != manual:
+        raise ValueError("dispatch has a nonmanual absent body or a manual binding still translated")
+    derived = data[:table.start(1)] + b"".join(kept) + data[table.end(1):]
+    count_pattern = rb"(?m)^static const size_t g_recomp_table_size = ([0-9]+);"
+    counts = list(re.finditer(count_pattern, derived))
+    if len(counts) != 1 or int(counts[0].group(1)) != len(addresses):
+        raise ValueError("unsupported generated dispatch count declaration")
+    derived = re.sub(count_pattern,
+        b"static const size_t g_recomp_table_size = sizeof(g_recomp_table) / sizeof(g_recomp_table[0]);",
+        derived, count=1)
+    identity = dict(schema="sc2.manual-dispatch-filter.v1", authenticated_sha256=digest(original),
+                    manual_sha256=receipt["manual_sha256"], input_entries=len(addresses),
+                    output_entries=len(kept), removed_addresses=[f"0x{value:08X}" for value in removed],
+                    count_policy="sizeof(g_recomp_table)/sizeof(g_recomp_table[0])",
+                    derived_sha256=hashlib.sha256(derived).hexdigest())
+    identity["transform_sha256"] = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+    return derived, identity
+
+
+def derived_dispatch(program, members, receipt):
+    data, identity = dispatch_transform(program, members, receipt)
+    directory = private_path(PRIVATE / "ps5-guest-derived" / receipt["manifest_sha256"] /
+                             identity["transform_sha256"])
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "recomp_dispatch.c"
+    if {p.name for p in directory.iterdir()} - {path.name}:
+        raise ValueError("derived dispatch directory has unexpected sibling files")
+    if path.exists():
+        if path.is_symlink() or path.read_bytes() != data:
+            raise ValueError("derived dispatch differs from the exact authenticated transform")
+    else:
+        with path.open("xb") as stream:
+            stream.write(data)
+    return path, identity
+
+
+def validate_guest_source(row, program, members, receipt):
+    """Recompute the sole permitted source derivation at link admission."""
+    original = Path(row["authenticated_source"]).resolve()
+    if row.get("authenticated_sha256") != digest(original):
+        raise ValueError("guest original source identity differs from its authenticated bytes")
+    source = Path(row["source"]).resolve()
+    if original.name == "recomp_dispatch.c":
+        expected, identity = dispatch_transform(program, members, receipt)
+        directory = private_path(PRIVATE / "ps5-guest-derived" / receipt["manifest_sha256"] /
+                                 identity["transform_sha256"])
+        if (source != directory / original.name or source.is_symlink() or
+                row.get("source_transform") != identity or source.read_bytes() != expected or
+                {p.name for p in directory.iterdir()} != {original.name}):
+            raise ValueError("guest derived dispatch source/transform differs from its authenticated policy")
+    elif row.get("source_transform") is not None or not os.path.samefile(original, source):
+        raise ValueError("ordinary guest chunks must remain unchanged authenticated source hardlinks")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--xbe", type=Path, required=True, help="supported executable, read in place")
     parser.add_argument("--program", type=Path, default=PRIVATE / "program")
     parser.add_argument("--sdk", type=Path, required=True)
     parser.add_argument("--llvm", type=Path, required=True, help="LLVM bin directory")
+    parser.add_argument("--jobs", type=int, default=2, help="bounded parallel compile workers (1..4)")
+    parser.add_argument("--incremental", action="store_true", help="reuse dependency-validated unchanged objects")
     args = parser.parse_args()
+    if not 1 <= args.jobs <= 4:
+        parser.error("--jobs must be1..4")
     try:
         receipt, members = authenticate(args.program, args.xbe)
         sdk, llvm = args.sdk.resolve(), args.llvm.resolve()
@@ -97,6 +198,7 @@ def main():
                 raise ValueError(f"missing build input: {required}")
         manifest = receipt["manifest_sha256"]
         staged = stage_members(members, PRIVATE / "ps5-guest-source" / manifest)
+        dispatch_source, dispatch_identity = derived_dispatch(args.program, members, receipt)
         merged = merged_sources()
         out = private_path(PRIVATE / "ps5-guest-objects" / manifest)
         out.mkdir(parents=True, exist_ok=True)
@@ -113,24 +215,51 @@ def main():
         headers = {str(p): digest(p) for p in sorted(merged.rglob("*.h"))}
         forced_header_hash = digest(ROOT / "runtime/x87_math.h")
         compiler_hash = digest(compiler)
-        for member in members:
-            if member.suffix != ".c":
-                continue
-            source = staged / member.name
+        def compile_member(member):
+            source = dispatch_source if member.name == "recomp_dispatch.c" else staged / member.name
             obj = out / (member.stem + ".o")
             command = [str(compiler), *flags, "-c", str(source), "-o", str(obj)]
-            row = compile_record(source, obj, command, sdk, out / (member.stem + ".log"))
-            # Retain the authenticated generated-source identity for link admission.
+            row = None
+            if args.incremental and obj.with_suffix(".object.json").is_file():
+                try:
+                    candidate = json.loads(obj.with_suffix(".object.json").read_text(encoding="utf-8"))
+                    row = validate_object(candidate, sdk, command)
+                except (ValueError, OSError, KeyError, TypeError):
+                    pass
+            reused = row is not None
+            if row is None:
+                row = compile_record(source, obj, command, sdk, out / (member.stem + ".log"))
             row["authenticated_source"] = str(member)
-            rows.append(row)
-            print(f"{'compiled' if row['object'] else 'FAILED'}: {member.name}", flush=True)
+            row["authenticated_sha256"] = digest(member)
+            if member.name == "recomp_dispatch.c":
+                row["source_transform"] = dispatch_identity
+            validate_guest_source(row, args.program, members, receipt)
+            obj.with_suffix(".object.json").write_text(json.dumps(row, indent=2) + "\n", encoding="utf-8")
+            print(f"{'unchanged' if reused else 'compiled' if row['object'] else 'FAILED'}: {member.name}", flush=True)
+            return row
+        sources = [member for member in members if member.suffix == ".c"]
+        # Compile one real chunk first so an ABI/header failure does not fan
+        # out over every large generated unit before its cause is corrected.
+        rows.append(compile_member(sources[0]))
+        if rows[0]["object"]:
+            with ThreadPoolExecutor(max_workers=args.jobs) as workers:
+                rows.extend(workers.map(compile_member, sources[1:]))
         # Hardlinked sources can be modified through either name; reauthenticate.
         authenticate(args.program, args.xbe)
-        unchanged_headers = (all(Path(p).is_file() and digest(Path(p)) == sha for p, sha in headers.items())
-                             and digest(ROOT / "runtime/x87_math.h") == forced_header_hash)
+        # The native launcher/path headers are unrelated to generated guest
+        # C. Track only compiler-observed runtime headers, so an independent
+        # platform edit cannot invalidate every large guest chunk unnecessarily.
+        used = {item["path"] for row in rows for item in row.get("dependencies", [])}
+        headers = {path: sha for path, sha in headers.items() if path in used}
+        unchanged_headers = (all(Path(path).is_file() and digest(Path(path)) == sha
+                                 for path, sha in headers.items()) and
+                             digest(ROOT / "runtime/x87_math.h") == forced_header_hash)
+        for row in rows:
+            if row.get("object"):
+                validate_object(row, sdk)
         if digest(compiler) != compiler_hash:
             raise ValueError("compiler changed during compilation; discard this object batch")
-        success = all(row["object"] for row in rows) and unchanged_headers
+        success = len(rows) == len(sources) and all(row["object"] for row in rows) and unchanged_headers
         result = dict(schema="sc2.ps5-guest-objects.v1", xbe_sha256=USA_SHA256,
                       program=str(args.program.resolve()), manifest_sha256=manifest,
                       manual_sha256=receipt["manual_sha256"], lifter_commit=LIFTER_COMMIT,

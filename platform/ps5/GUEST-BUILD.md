@@ -76,3 +76,28 @@ A payload ELF is not a PlayStation install package or a human-tested game.
 No boot metadata, console installation, launch or game-success bodies are
 invented by this tooling. `ps5_package.py` remains the separate private
 owner-input packager.
+
+## First real guest build and native dispatch integration
+
+The supplied supported USA executable was genuinely lifted and all eight C
+chunks plus dispatch compiled with zero uninitialized EBP prologues. The first
+application link isolated99 entries in the generated fallback table whose
+translated bodies are deliberately omitted by --manual-functions. Existing
+native manual lookup runs before this fallback and supplies the actual APIs.
+
+The guest compiler derives a separate dispatch source which removes exactly
+those99 authenticated table rows and changes the literal count to sizeof.
+It verifies every remaining row has an actual translated definition, retaining
+the real xbe_entry_point. It creates no stub or substitute body and never
+modifies the original generated snapshot/hardlinks. The original/manual/derived
+hashes, transform policy and addresses are recorded; link admission recomputes
+the exact derivation. An actual incremental build reused all eight chunks and
+rebuilt only dispatch, then the complete application link succeeded.
+
+The Windows manual-binding file's original CRLF bytes remain authenticated by
+the lift receipt; normalized text must still match the current exact binding
+list. Parallel guest compilation is bounded by --jobs1..4 (default2), and
+--incremental reuses only unchanged dependency-validated objects. The first real
+chunk compiles before the parallel batch so a header/ABI failure is actionable
+without fanning out over every large source. Only compiler-observed runtime
+headers participate in guest freshness, not unrelated launcher/path headers.
