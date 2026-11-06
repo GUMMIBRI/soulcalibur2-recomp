@@ -146,7 +146,7 @@ def finalized_app(receipt_path, selected=None):
     executable = checked_record(value["self"], expected)
     if selected is not None and plain_path(selected) != executable:
         raise ValueError("--eboot must select the exact recorded finalized eboot.bin")
-    from ps5_finalize_payload import CONVERTER_SHA256, png_icon
+    from ps5_finalize_payload import CONVERTER_SHA256, COMPANION_SHA256, png_icon
     converter = checked_record(value["converter"])
     if digest(converter) != CONVERTER_SHA256:
         raise ValueError("finalization selected another unreviewed SELF converter")
@@ -164,7 +164,10 @@ def finalized_app(receipt_path, selected=None):
     if not linked or checked_record(linked) != original:
         raise ValueError("application link selects a different ELF")
     metadata = []
-    allowed = {"sce_sys/param.json", "sce_sys/icon0.png", "sce_sys/pic0.dds", "sce_sys/pic1.dds", "icon0.png"}
+    companion = checked_record(value['loader_companion'], plain_path(receipt_path.parent / 'sce_module/libc.prx'))
+    if companion.stat().st_size != 1284674 or digest(companion) != COMPANION_SHA256:
+        raise ValueError('required signed public application loader companion differs')
+    allowed = {"sce_sys/param.json", "sce_sys/icon0.png", "sce_sys/pic0.dds", "sce_sys/pic1.dds", "icon0.png", "sce_module/libc.prx"}
     for item in value.get("metadata", []):
         relative = Path(item["path"])
         if relative.as_posix() not in allowed:
@@ -177,12 +180,14 @@ def finalized_app(receipt_path, selected=None):
             png_icon(source)
         metadata.append((source, relative))
     selected_metadata = {relative.as_posix() for _, relative in metadata}
+    if 'sce_module/libc.prx' not in selected_metadata:
+        raise ValueError('finalized application is missing its signed public loader companion')
     if value.get("metadata_supplied") or "sce_sys/param.json" in selected_metadata:
         if not {"sce_sys/param.json", "sce_sys/icon0.png"}.issubset(selected_metadata):
             raise ValueError("application metadata needs both sce_sys/param.json and a valid512x512 sce_sys/icon0.png")
     # Preserve the finalizer's exact rights/credit files; never collect its logs,
     # unconverted program, private receipts or unrelated files into the app.
-    for relative in ("legal/SC2-GPL-3.0.txt", "legal/PSXS5-GPL-3.0.txt", "legal/PSXS5-SOURCE.json", "RELEASE-ENDNOTE.md"):
+    for relative in ("legal/SC2-GPL-3.0.txt", "legal/PSXS5-GPL-3.0.txt", "legal/PSXS5-SOURCE.json", "legal/PSXS5-LOADER-SOURCE.json", "RELEASE-ENDNOTE.md"):
         source = plain_path(receipt_path.parent / relative)
         if source.is_file():
             metadata.append((source, Path(relative)))

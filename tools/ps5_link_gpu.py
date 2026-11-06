@@ -15,7 +15,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from ps5_compile_host import validate_object, compile_record
+from ps5_compile_host import validate_object, compile_record, validate_install_root
 
 ROOT = Path(__file__).resolve().parents[1]
 PLATFORM_OBJECTS = (
@@ -78,6 +78,7 @@ def main():
     parser.add_argument("--sdl", type=Path, required=True, help="GPU-enabled SDL3 prefix")
     parser.add_argument("--radv", type=Path, required=True, help="PS5 RADV release prefix")
     parser.add_argument("--sdk", type=Path, required=True, help="public PS5 SDK used for host compilation")
+    parser.add_argument("--eboot-dir", help="explicit application install root matching runner/startup compilation")
     parser.add_argument("--guest-receipt", type=Path, help="authenticated ps5_compile_guest.py object receipt")
     parser.add_argument("--xbe", type=Path, help="supported owned executable, read in place for guest receipt validation")
     parser.add_argument("--shaderc-library", type=Path, help="real target libshaderc_combined.a")
@@ -100,6 +101,13 @@ def main():
     executable_mode = args.payload or args.application
     if executable_mode and (not args.full_runner or not args.guest_receipt or not args.xbe):
         parser.error("--payload/--application requires --full-runner --guest-receipt --xbe")
+    if args.application:
+        if not args.eboot_dir:
+            parser.error("--application requires --eboot-dir for the pre-CRT startup log")
+        try:
+            validate_install_root(args.eboot_dir)
+        except ValueError as error:
+            parser.error(str(error))
     suffix = ".exe" if sys.platform == "win32" else ""
     linker = args.llvm / ("ld.lld" + suffix)
     nm = args.llvm / ("llvm-nm" + suffix)
@@ -167,10 +175,12 @@ def main():
     if args.application:
         try:
             units.append(application_crt(args.sdk, args.llvm))
+            units.append(ROOT / "private/ps5-host-objects/sc2_ps5_startup.o")
         except (ValueError, OSError) as error:
             parser.error(str(error))
         app_inputs = [ROOT / ("platform/ps5/app/" + name) for name in
                       ("app_crt.cpp", "ps5-pie.ld", "ps5-pie-unwind.ld", "app-symbols.map", "SOURCE.json")]
+        app_inputs.append(ROOT / "runtime/sc2_ps5_startup.c")
     units = list(dict.fromkeys(path.resolve() for path in units))
     # Every selected object, including renderer/kernel and --extra-object inputs,
     # must have the dependency-tracked receipt produced by the actual compiler.
@@ -187,6 +197,10 @@ def main():
                 raise ValueError(f"object is not compiled for the selected PS5 target: {obj}")
             if Path(row["compiler"]).resolve().parent != args.llvm.resolve():
                 raise ValueError(f"object was compiled with another LLVM installation: {obj}")
+            if args.application and obj.stem in ("runner", "sc2_ps5_startup"):
+                root_define = "-DSC2_PS5_INSTALL_ROOT=" + json.dumps(args.eboot_dir)
+                if root_define not in row["command"]:
+                    raise ValueError("runner/startup must be compiled with the same explicit --eboot-dir as this application")
             if obj.stem == "d3d_shader_compiler":
                 native = "-DRECOMP_SHADERC_LINKED=1" in row["command"]
                 if native != bool(args.shaderc_library):
@@ -225,7 +239,7 @@ def main():
                     "sc2-gpu-host.so" if args.strict_shared else "sc2-gpu-platform.o")
     linked.unlink(missing_ok=True)
     command = [linker, "-L", sdk_lib, "--wrap=fflush", "--wrap=fclose",
-               *( ["-pie", "--no-undefined", "-e", "_start", "-z", "max-page-size=0x4000", "--hash-style=gnu"] if executable_mode else
+               *( ["-pie", "--no-undefined", "-e", "sc2_ps5_start" if args.application else "_start", "-z", "max-page-size=0x4000", "--hash-style=gnu"] if executable_mode else
                   ["-shared", "--no-undefined"] if args.strict_shared else ["-r"] ),
                "--start-group", *units, sdl, radv, *archives,
                "--end-group", "-o", linked]
@@ -302,6 +316,8 @@ def main():
                    strict_shared_link_succeeded=link_success and args.strict_shared,
                    fully_linked=executable_mode and link_success and not remaining,
                    application_abi="sc2.ps5-application.v1" if args.application else None,
+                   application_entry="sc2_ps5_start" if args.application else None,
+                   startup_log=(args.eboot_dir + "/startup.log") if args.application else None,
                    output=dict(path=str(linked.resolve()), sha256=digest(linked), bytes=linked.stat().st_size) if link_success else None,
                    executed=False, unresolved=unresolved,
                    sdk_import_coverage=imported, unresolved_without_sdk_import=remaining,

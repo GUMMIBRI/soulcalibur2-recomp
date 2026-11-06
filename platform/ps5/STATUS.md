@@ -1,5 +1,13 @@
 # PS5 homebrew port
 
+Latest human launch: icon/registration reached, then0xa0020102
+PRX_SCE_MODULE_LOAD_ERROR. A missing source-built public loader companion was
+identified by comparison with the working PE native recipe. A new test eboot
+with pre-CRT/runner/GPU stage logging and signed sce_module/libc.prx is now
+uploaded and SHA readback verified at USB0/homebrew/Soulcalibur II. See
+STARTUP-LOGGING.md and private/module-load-error/LOGGING-REPLACE.json. The
+next human launch is pending; no resolved-module-error or gameplay claim.
+
 Human discovery failure follow-up: ShadowMount actually detected the title but
 registration failed because sce_sys/icon0.png was missing, then hit its retry
 limit. The owner moved the app to /mnt/usb0/homebrew/Soulcalibur II. A corrected
@@ -30,8 +38,9 @@ SHA256 matched. App is /mnt/usb0/Soulcalibur II/eboot.bin; assets are
 protocol was used without starting it. Games were confirmed closed. Launcher
 metadata supplement also passed: private/ps5-upload-run/METADATA-UPLOAD-20261105.json.
 Original sce_sys/param.json uses provisional homebrew identity PPSA77024 and
-was SHA256 readback verified with the eboot unchanged. No extra libc.prx is
-required by the actual11 system-library dependencies. Launcher discovery or
+was SHA256 readback verified with the eboot unchanged. The earlier inference
+that11 system-library dependencies ruled out a companion was incorrect;
+the public loader shim is now required and supplied. Launcher discovery or
 registration depends on the user's launcher; no internal install, launch or
 gameplay qualification follows from USB delivery.
 Earlier missing-input/guest-link checkpoints below are historical.

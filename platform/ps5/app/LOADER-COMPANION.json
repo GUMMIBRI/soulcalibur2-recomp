@@ -1,0 +1,12 @@
+{
+  "repository": "https://github.com/SynoPiia/PSXS5",
+  "revision": "5c17ea31aec5791c12451e915386fa98d670adb4",
+  "license": "GPL-3.0-or-later",
+  "author": "BlackBearReloaded",
+  "source": "tooling/native/libc_builder.cpp",
+  "manifests": ["tooling/native/runtime/api-surface.txt", "tooling/native/runtime/imports.txt"],
+  "destination": "sce_module/libc.prx",
+  "bytes": 1284674,
+  "sha256": "e6ff45d16adf687855cc3b33b0c8a4132b6504360b221e0a34c7e99fb3ba0036",
+  "role": "Source-generated signed public application loader companion; not a full libc or retail module"
+}

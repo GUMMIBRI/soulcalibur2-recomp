@@ -3,6 +3,7 @@
 // recomp-runtime/d3d_presenter_sdl_gpu.cpp. SC2 PS5 adds optional FSR1 presentation.
 #if defined(SC2_PS5)
 #include "sc2_fsr.h"
+extern "C" void sc2_ps5_log_stage(const char *) __attribute__((weak));
 #endif
 /* The presenter backend for macOS (Metal) and Linux (Vulkan), through
    SDL_GPU. It follows the Direct3D 11 backend (d3d_presenter_d3d11.cpp) call
@@ -3328,6 +3329,9 @@ RecompD3dPresenterError checkOwner(RecompD3dPresenter *presenter)
 
 RecompD3dPresenterError d3d_backend_create(const RecompD3dPresenterConfig *config, RecompD3dPresenter **presenter)
 {
+#if defined(SC2_PS5)
+    if (sc2_ps5_log_stage) sc2_ps5_log_stage("GPU presenter: creation entered");
+#endif
     if (config == nullptr || presenter == nullptr || config->width == 0u || config->height == 0u ||
         config->color_format != RECOMP_D3D_PRESENTER_COLOR_FORMAT_BGRA8_UNORM ||
         config->depth_format != RECOMP_D3D_PRESENTER_DEPTH_FORMAT_D24S8) {
@@ -3336,6 +3340,12 @@ RecompD3dPresenterError d3d_backend_create(const RecompD3dPresenterConfig *confi
     if (*presenter != nullptr || active_presenter != nullptr) return RECOMP_D3D_PRESENTER_ALREADY_INITIALIZED;
     if (!recomp_shader_compiler_available()) return RECOMP_D3D_PRESENTER_HOST_FAILURE;
     if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) {
+#if defined(SC2_PS5)
+        if (sc2_ps5_log_stage) {
+            sc2_ps5_log_stage("GPU presenter: SDL video initialization failed");
+            sc2_ps5_log_stage(SDL_GetError());
+        }
+#endif
         std::fprintf(stderr, "recomp d3d presenter: SDL video failed: %s\n", SDL_GetError());
         return RECOMP_D3D_PRESENTER_HOST_FAILURE;
     }
@@ -3355,12 +3365,22 @@ RecompD3dPresenterError d3d_backend_create(const RecompD3dPresenterConfig *confi
         if (std::isfinite(value)) created->scale = std::clamp(value, 1.0f, 8.0f);
     }
     const auto fail = [&](const char *what) {
+#if defined(SC2_PS5)
+        if (sc2_ps5_log_stage) {
+            sc2_ps5_log_stage("GPU presenter: initialization failed");
+            sc2_ps5_log_stage(what);
+            sc2_ps5_log_stage(SDL_GetError());
+        }
+#endif
         std::fprintf(stderr, "recomp d3d presenter: %s: %s\n", what, SDL_GetError());
         releasePresenter(created);
         delete created;
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
         return RECOMP_D3D_PRESENTER_HOST_FAILURE;
     };
+#if defined(SC2_PS5)
+    if (sc2_ps5_log_stage) sc2_ps5_log_stage("GPU presenter: creating SDL GPU device");
+#endif
 #ifdef __ANDROID__
     // Phones' Vulkan drivers vary: of SDL's optional features only depth clamping is asked for, which most of the
     // pipelines use (no depth clip); none uses clip distances, anisotropy or indirect draws
@@ -3375,6 +3395,9 @@ RecompD3dPresenterError d3d_backend_create(const RecompD3dPresenterConfig *confi
     created->device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_MSL | SDL_GPU_SHADERFORMAT_SPIRV, false, nullptr);
 #endif
     if (created->device == nullptr) return fail("SDL_GPU device");
+#if defined(SC2_PS5)
+    if (sc2_ps5_log_stage) sc2_ps5_log_stage("GPU presenter: SDL GPU device created");
+#endif
     if (SDL_GetGPUShaderFormats(created->device) & SDL_GPU_SHADERFORMAT_SPIRV) {
         created->shader_target = RecompShaderTarget::Spirv;
         created->shader_format = SDL_GPU_SHADERFORMAT_SPIRV;

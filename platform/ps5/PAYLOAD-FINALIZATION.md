@@ -78,6 +78,9 @@ Optional --metadata points to owner-authored app metadata with explicit titleId;
 only sce_sys/{param.json,icon0.png,pic0.dds,pic1.dds} and optional root icon0.png
 are copied. Saves/settings/assets and arbitrary metadata-folder contents are
 not copied. Without metadata, the result is not an assembled install folder.
+The required --companion selects the exact reviewed signed public loader shim
+for sce_module/libc.prx; its SHA/size and GPL source notice are enforced. The
+system DT_NEEDED list alone does not establish that this companion is optional.
 No ZIP, console upload, install, launch, game or human qualification is performed.
 
 ## Evidence and remaining boundary

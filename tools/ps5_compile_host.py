@@ -233,6 +233,16 @@ def game_sources():
     return tuple(names)
 
 
+def validate_install_root(value):
+    """Explicit target-side metadata; do not resolve it through the host CWD."""
+    if (not isinstance(value, str) or len(value.encode("utf-8")) > 384 or
+            not re.fullmatch(r"/mnt/(?:usb[0-9]+|data/homebrew)/[^\\\r\n]+", value) or
+            any(ord(c) < 32 or ord(c) == 127 for c in value) or
+            any(part in ("", ".", "..") for part in value.split("/")[1:])):
+        raise ValueError("install root must be an explicit USB or installed-homebrew directory without dot components")
+    return value
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sdk", required=True, type=Path)
@@ -246,7 +256,7 @@ def main():
     parser.add_argument("--opt-level", choices=("0", "1", "2", "3", "s"), default="2",
                         help="production optimization level; changing it invalidates incremental objects")
     parser.add_argument("--only", action="append", help="compile only these source basenames (repeatable)")
-    parser.add_argument("--group", choices=("host", "kernel", "runner", "adapters", "game"), default="host",
+    parser.add_argument("--group", choices=("host", "kernel", "runner", "adapters", "game", "startup"), default="host",
                         help="actual upstream target source group; no guest substitutes")
     parser.add_argument("--eboot-dir", help="explicit PS5 test-install directory embedded in runner startup")
     parser.add_argument("--xbe-sha256", default="7ce12851850ab46766f77c612b251afe7c8bd81f879e11b4836bdf766be542c6",
@@ -254,6 +264,13 @@ def main():
     args = parser.parse_args()
     if len(args.xbe_sha256) != 64 or any(c not in "0123456789abcdef" for c in args.xbe_sha256):
         parser.error("expected XBE SHA-256 must be 64 lowercase hexadecimal digits")
+    if args.group == "startup" and not args.eboot_dir:
+        parser.error("--group startup requires --eboot-dir for its fixed pre-CRT log path")
+    if args.eboot_dir:
+        try:
+            validate_install_root(args.eboot_dir)
+        except ValueError as error:
+            parser.error(str(error))
     sdk, llvm, sdl = args.sdk.resolve(), args.llvm.resolve(), args.sdl.resolve()
     imgui = args.imgui.resolve()
     suffix = ".exe" if sys.platform == "win32" else ""
@@ -275,11 +292,11 @@ def main():
               "-I", str(merged.parent / "xbe")]
     if args.group == "runner":
         common.append('-DRECOMP_XBE_SHA256="' + args.xbe_sha256 + '"')
-        if args.eboot_dir:
-            if (not re.fullmatch(r"/mnt/(?:usb[0-9]+|data/homebrew)/[^\r\n]+", args.eboot_dir) or
-                    any(part in (".", "..") for part in args.eboot_dir.split("/"))):
-                parser.error("--eboot-dir must be an explicit USB or installed-homebrew directory")
-            common.append("-DSC2_PS5_INSTALL_ROOT=" + json.dumps(args.eboot_dir))
+    if args.group in ("runner", "startup") and args.eboot_dir:
+        common.append("-DSC2_PS5_INSTALL_ROOT=" + json.dumps(args.eboot_dir))
+    if args.group == "startup":
+        # Prevent compiler-generated strlen/memcpy helpers before libc exists.
+        common += ["-ffreestanding", "-fno-builtin"]
     if args.shaderc_include:
         if not (args.shaderc_include / "shaderc/shaderc.h").is_file():
             parser.error("--shaderc-include must contain shaderc/shaderc.h")
@@ -295,7 +312,8 @@ def main():
     imgui_sources = [imgui / name for name in ("imgui.cpp", "imgui_draw.cpp", "imgui_tables.cpp",
                     "imgui_widgets.cpp", "backends/imgui_impl_sdlgpu3.cpp")]
     names = (KERNEL_SOURCES if args.group == "kernel" else ("runner.cpp",) if args.group == "runner"
-             else ADAPTER_SOURCES if args.group == "adapters" else game_sources() if args.group == "game" else SOURCES)
+             else ("sc2_ps5_startup.c",) if args.group == "startup" else
+             ADAPTER_SOURCES if args.group == "adapters" else game_sources() if args.group == "game" else SOURCES)
     sources = [merged / name for name in names]
     if args.group == "host":
         sources += [*imgui_sources, adapter]

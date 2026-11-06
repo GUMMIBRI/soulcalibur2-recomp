@@ -17,6 +17,7 @@ import zlib
 ROOT = Path(__file__).resolve().parents[1]
 PRIVATE = ROOT / 'private'
 CONVERTER_SHA256 = '78fdfec756c6e7fa132bd2fbf6eeaea753d9b01349d09a8993bba76eed77fd84'
+COMPANION_SHA256 = 'e6ff45d16adf687855cc3b33b0c8a4132b6504360b221e0a34c7e99fb3ba0036'
 MAX_ELF = 1024 * 1024 * 1024
 
 
@@ -203,6 +204,8 @@ def main():
     parser.add_argument('--llvm', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--metadata', type=Path, help='explicit owner-authored app folder containing sce_sys/param.json')
+    parser.add_argument('--companion', type=Path, required=True,
+                        help='reviewed source-derived signed public loader shim libc.prx')
     args = parser.parse_args()
     try:
         elf, receipt_path, converter, sdk, llvm, out = map(plain, (args.elf, args.link_receipt, args.converter, args.sdk, args.llvm, args.output))
@@ -240,6 +243,11 @@ def main():
                 if source.is_file():
                     if relative.endswith('icon0.png'): png_icon(source)
                     metadata.append((source, Path(relative)))
+        companion = plain(args.companion)
+        if (not companion.is_file() or companion.stat().st_size != 1284674 or
+                digest(companion) != COMPANION_SHA256):
+            raise ValueError('require the reviewed signed public loader companion, not a raw ELF or retail module')
+        metadata.append((companion, Path('sce_module/libc.prx')))
         for source in (elf, receipt_path, converter, *(p for p, _ in metadata)):
             if out == source or source.is_relative_to(out) or out.is_relative_to(source):
                 raise ValueError('final output overlaps an input')
@@ -271,10 +279,12 @@ def main():
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)
         shutil.copyfile(ROOT / 'platform/ps5/app/SOURCE.json', out / 'legal/PSXS5-SOURCE.json')
+        shutil.copyfile(ROOT / 'platform/ps5/app/LOADER-COMPANION.json', out / 'legal/PSXS5-LOADER-SOURCE.json')
         shutil.copyfile(ROOT / 'platform/ps5/RELEASE-ENDNOTE.md', out / 'RELEASE-ENDNOTE.md')
         result = dict(schema='sc2.ps5-finalized-app.v1', input=record(elf), link_receipt=record(receipt_path), converter=record(converter),
                       output=record(converted), self=record(self_file), retained_sections=sections, commands=commands,
                       metadata_supplied=bool(args.metadata), metadata=[dict(path=str(r), source=record(p)) for p, r in metadata],
+                      loader_companion=record(out / 'sce_module/libc.prx'),
                       application_linked=True, console_executed=False, installed=False, gameplay_verified=False)
         (out / 'FINALIZATION.json').write_text(json.dumps(result, indent=2) + '\n')
         print('Converted application ELF/development SELF locally; no installation or target execution.')

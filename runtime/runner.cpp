@@ -49,6 +49,10 @@
 #include "sc2_ps5.h"
 #if defined(SC2_PS5)
 #include "sc2_fsr.h"
+extern "C" void sc2_ps5_log_stage(const char *stage);
+#define SC2_PS5_STAGE(stage) sc2_ps5_log_stage(stage)
+#else
+#define SC2_PS5_STAGE(stage) ((void)0)
 #endif
 
 extern "C" {
@@ -997,6 +1001,7 @@ static bool sampleInput(std::uint32_t port, RecompInputGamepad *gamepad)
 
 int main(int argc, char **argv)
 {
+    SC2_PS5_STAGE("runner:main-enter");
 #ifdef __ANDROID__
     sc2_android_start();
 #endif
@@ -1233,10 +1238,14 @@ int main(int argc, char **argv)
         if (!physicalExecutable && !std::getenv("SC2_PS5_EBOOT_DIR"))
             setenv("SC2_PS5_EBOOT_DIR", SC2_PS5_INSTALL_ROOT, 0);
 #endif
+        SC2_PS5_STAGE("runner:paths-begin");
         if (!sc2::PS5LaunchPaths(xbePath, discImage, storageRoot, settingsPath, error, executable)) {
+            SC2_PS5_STAGE("runner:paths-failed");
+            SC2_PS5_STAGE(error.c_str());
             std::cerr << "recomp runner: " << error << '\n';
             return 73;
         }
+        SC2_PS5_STAGE("runner:paths-ready");
         if (guests.empty() && guestLink.empty() && guestHeihachi.empty())
             guests = sc2::PS5GuestRoster(xbePath, discImage);
         const auto requests = std::filesystem::path(settingsPath).parent_path() / "shader-requests";
@@ -1295,16 +1304,19 @@ int main(int argc, char **argv)
     sc2::SetShader(shader);
     /* A disc image: its Default.xbe is read out of it, and the D: drive is
        served from it (disc_image.h). */
+    SC2_PS5_STAGE("runner:game-validation-begin");
     std::vector<std::uint8_t> imageXbe;
     if (!discImage.empty()) {
         RecompDiscImageEntry entry;
         if (!recomp_disc_image_open(discImage.c_str()) ||
             !recomp_disc_image_lookup("default.xbe", &entry) || entry.directory || entry.size > (64u << 20)) {
+            SC2_PS5_STAGE("runner:disc-open-failed");
             std::cerr << "recomp runner: the disc image has no Default.xbe\n";
             return 1;
         }
         imageXbe.resize(static_cast<std::size_t>(entry.size));
         if (recomp_disc_image_read(entry.offset, imageXbe.data(), imageXbe.size()) != imageXbe.size()) {
+            SC2_PS5_STAGE("runner:disc-read-failed");
             std::cerr << "recomp runner: the disc image could not be read\n";
             return 1;
         }
@@ -1312,6 +1324,7 @@ int main(int argc, char **argv)
     const auto parsed = discImage.empty() ? doaxbv::XbeParser().parse(std::filesystem::u8path(xbePath))
                                           : doaxbv::XbeParser().parse(std::move(imageXbe));
     if (!parsed.ok()) {
+        SC2_PS5_STAGE("runner:xbe-parse-failed");
         std::cerr << "recomp runner: " << parsed.errors.front() << '\n';
         return 1;
     }
@@ -1321,6 +1334,7 @@ int main(int argc, char **argv)
     /* The port's media-patched copy, or the retail disc's (sc2_xbe.h). */
     const bool retailXbe = parsed.metadata.fileSha256 == SC2_RETAIL_XBE_SHA256;
     if (parsed.metadata.fileSha256 != RECOMP_XBE_SHA256 && !retailXbe) {
+        SC2_PS5_STAGE("runner:xbe-auth-failed");
         std::cerr << "recomp runner: XBE SHA-256 " << parsed.metadata.fileSha256
                   << " is neither Soulcalibur II (" << (SC2_PAL ? "Europe" : "USA")
                   << ") retail nor the program target\n";
@@ -1330,6 +1344,7 @@ int main(int argc, char **argv)
     std::string error;
     // The file was authenticated by SHA-256 above; the patched copy's .text digest is stale (docs/bring-up.md).
     if (!recomp_load_xbe(parsed, memory, error, true)) {
+        SC2_PS5_STAGE("runner:xbe-load-failed");
         std::cerr << "recomp runner: " << error << '\n';
         return 1;
     }
@@ -1343,9 +1358,11 @@ int main(int argc, char **argv)
     const auto imageEnd = static_cast<std::uint64_t>(parsed.metadata.header.baseAddress) +
         parsed.metadata.header.sizeImage;
     if (!xbox_HeapSetImageEnd(static_cast<std::uint32_t>(imageEnd))) {
+        SC2_PS5_STAGE("runner:heap-boundary-failed");
         std::cerr << "recomp runner: invalid heap image boundary\n";
         return 1;
     }
+    SC2_PS5_STAGE("runner:game-image-ready");
     if (!discImage.empty()) discRoot = std::filesystem::absolute(std::filesystem::u8path(discImage)).string();
     if (discRoot.empty()) discRoot = std::filesystem::absolute(std::filesystem::u8path(xbePath)).parent_path().string();
     const auto discPath = std::filesystem::u8path(discRoot);
@@ -1458,6 +1475,7 @@ int main(int argc, char **argv)
         return storageRoot.empty() ? recomp_save_initialize(recomp_disc_root_path)
                                    : recomp_save_initialize_storage(recomp_storage_root_path);
     };
+    SC2_PS5_STAGE("runner:save-init-begin");
     bool saveReady = saveInitialize();
     /* (a copy started over or again for online play: on Windows the copy before it is still ending as this one
        starts, its hold on the save journal (opened for itself alone) with it, so this one asks again a while) */
@@ -1467,14 +1485,19 @@ int main(int argc, char **argv)
         if (saveReady) std::fprintf(stderr, "online: the save journal opened after %d ms\n", (tries + 1) * 100);
     }
     if (!saveReady) {
+        SC2_PS5_STAGE("runner:save-init-failed");
         std::cerr << "recomp runner: save recovery failed; guest not started\n";
         std::cerr << "recomp stop: save:journal-unreadable (the save folder couldn't be opened) exit_code=2\n";  // (for the launcher)
         return 2;
     }
+    SC2_PS5_STAGE("runner:save-ready");
     const RecompMemoryRegion region = {0u, memory.size(), memory.data()};
+    SC2_PS5_STAGE("runner:runtime-init-begin");
     recomp_runtime_init(&region, 1u, nullptr, 0u, nullptr, 0u);
+    SC2_PS5_STAGE("runner:runtime-ready");
     if (!guests.empty()) {
         if (!sc2::ApplyGuestRoster(guests.c_str())) {
+            SC2_PS5_STAGE("runner:roster-init-failed");
             std::cerr << "recomp runner: " << guests << " is not a guests' root.olk\n";
 #if defined(SC2_PS5)
             return 2; // Do not start with a selected roster that failed initialization.
@@ -1498,8 +1521,11 @@ int main(int argc, char **argv)
     recomp_watchdog_start();
     recomp_runtime.registers.esp -= 4u;
     *recomp_memory_u32(recomp_runtime.registers.esp) = 0u;
+    SC2_PS5_STAGE("runner:guest-dispatch-begin");
     recomp_dispatch_indirect_site(parsed.metadata.selectedEntryPoint,
         XBOX_STARTUP_STACK_TOP, __FILE__, __LINE__);
+    SC2_PS5_STAGE("runner:guest-dispatch-return");
     recomp_kernel_run_threads();
+    SC2_PS5_STAGE("runner:program-returned");
     recomp_stop(0, "program-returned");
 }

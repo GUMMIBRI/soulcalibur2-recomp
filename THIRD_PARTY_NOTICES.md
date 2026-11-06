@@ -77,3 +77,11 @@ not redistributed with game assets; its exact reviewed hash is recorded by the
 private finalization receipt. No Sony proprietary SDK or retail game code is
 included in this source contribution. These PS5-specific changes stay in the
 user's fork; they are not submitted to the upstream PC port.
+
+Native applications also bundle that project's public source-generated signed
+loader companion at sce_module/libc.prx, built by tooling/native/libc_builder.cpp
+and its runtime manifests. This is a GPL-3.0-or-later loader shim, not a retail
+module or a replacement for the system libc. Its pinned identity and source
+provenance are recorded in platform/ps5/app/LOADER-COMPANION.json and included
+with the private test application's full GPL license. The loader can require
+this companion independently of the ELF's DT_NEEDED list.
