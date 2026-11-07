@@ -287,6 +287,8 @@ def main():
                         help="successful target shaderc build receipt matching the exact archive")
     parser.add_argument("--title-heap", action="store_true", help="opt-in conditional private-NULL fallback to reviewed public title heap")
     parser.add_argument("--title-heap-library", type=Path, help="verified public b83202 libps5platform.a")
+    parser.add_argument("--platform-qsort", action="store_true",
+                        help="experimental application-only FreeBSD qsort_r via pinned public plain-qsort adapter")
     parser.add_argument("--platform-library", type=Path,
                         help="optional real public platform support archive; never a generated stub")
     modes = parser.add_mutually_exclusive_group()
@@ -305,6 +307,8 @@ def main():
         parser.error("--title-heap requires --application --title-heap-library and excludes --platform-library")
     if args.title_heap_library and not args.title_heap:
         parser.error("--title-heap-library requires explicit --title-heap")
+    if args.platform_qsort and (not args.application or not args.title_heap):
+        parser.error("--platform-qsort requires --application --title-heap with its pinned provider")
     executable_mode = args.payload or args.application
     if executable_mode and (not args.full_runner or not args.guest_receipt or not args.xbe):
         parser.error("--payload/--application requires --full-runner --guest-receipt --xbe")
@@ -422,11 +426,24 @@ def main():
     # must have the dependency-tracked receipt produced by the actual compiler.
     # Old manifests cannot prove header freshness or native-compiler selection.
     object_records = []
+    tls_cleanup = None
     verified_dependencies = set()
     try:
         for obj in units:
             row = json.loads(obj.with_suffix(".object.json").read_text(encoding="utf-8"))
             validate_object(row, args.sdk, validated_dependencies=verified_dependencies)
+            if obj.stem == "emutls":
+                if not args.application or args.platform_qsort:
+                    raise ValueError("TLS cleanup candidate requires isolated application mode without --platform-qsort")
+                folder = ROOT / "platform/ps5/tls"
+                pin = json.loads((folder / "SOURCE.json").read_text())
+                if (Path(row["source"]).resolve() != (folder / "emutls.c").resolve() or
+                        row["sha256"] != pin["sha256"] or
+                        not {"-D__PROSPERO__=1", "-DSC2_PS5_TLS_CLEANUP=1"}.issubset(row["command"]) or
+                        any(flag.startswith("-DEMUTLS_USE_POSIX_MEMALIGN") for flag in row["command"])):
+                    raise ValueError("TLS object lacks its pinned source, delayed cleanup or original manual allocation policy")
+                tls_cleanup = dict(source=pin, object=str(obj), expected_cleanup_delay=1,
+                                   cxa_binding="unchanged", console_qualified=False)
             if obj.stem == "sc2_native_directory":
                 from ps5_compile_directory import validate_bridge
                 validate_bridge(row, args.llvm)
@@ -509,6 +526,10 @@ def main():
         command.append("--error-limit=0")
     if args.title_heap:
         command += ["--wrap=" + symbol for symbol in (*TITLE_HEAP_WRAPS, *TITLE_HEAP_GUARDS, "pthread_create", "pthread_join", "pthread_detach")]
+    if args.platform_qsort:
+        # Keep native callback-order assumptions out of the FreeBSD bridge.
+        # Force the real pinned provider out of its archive, then bind callers.
+        command += ["--undefined=ps5_qsort_r", "--defsym=qsort_r=ps5_qsort_r"]
     crt_inputs = []
     if args.application:
         app = ROOT / "platform/ps5/app"
@@ -573,9 +594,26 @@ def main():
             shape_error = str(error)
     required_vulkan_providers = ["vk_common_GetPhysicalDeviceProperties2"]
     required_vulkan_provider_records = []
+    platform_qsort_record = None
     if args.application and done.returncode == 0 and shape_error is None:
         try:
             required_vulkan_provider_records = required_callable_providers(linked, required_vulkan_providers)
+            if tls_cleanup:
+                tls_cleanup["providers"] = required_callable_providers(
+                    linked, ["__emutls_get_address", "emutls_key_destructor"])
+            if args.platform_qsort:
+                provider = required_callable_providers(linked, ["ps5_qsort_r"])[0]
+                symbols = run([nm, "--defined-only", "--format=posix", linked])
+                if symbols.returncode:
+                    raise ValueError("cannot verify qsort_r binding: " + symbols.stderr)
+                aliases = [row.split() for row in symbols.stdout.splitlines()
+                           if row.split() and row.split()[0] == "qsort_r"]
+                if (len(aliases) != 1 or len(aliases[0]) < 3 or
+                        int(aliases[0][2], 16) != provider["address"]):
+                    raise ValueError("qsort_r does not bind to the executable public provider")
+                platform_qsort_record = dict(provider=provider, alias="qsort_r",
+                    alias_address=provider["address"], native_primitive="qsort",
+                    status="experimental portability route; native ABI and crash cause not qualified")
         except (ValueError, OSError) as error:
             shape_error = str(error)
     link_success = done.returncode == 0 and shape_error is None
@@ -614,6 +652,8 @@ def main():
                    strict_shared_link_succeeded=link_success and args.strict_shared,
                    fully_linked=executable_mode and link_success and not remaining,
                    title_heap=title_heap_transform,
+                   platform_qsort=platform_qsort_record,
+                   tls_cleanup=tls_cleanup,
                    application_abort_wrap=abort_wrap,
                    application_build_identity=build_identity,
                    radv_whole_archive=args.application,

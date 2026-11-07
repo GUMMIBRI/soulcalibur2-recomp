@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/bystritskiy/speedbreaker-ps5",
+  "revision": "5d269f62041a0dc5528d0652ee8edc31fdf02c2e",
+  "path": "port/ps5/compat/emutls.c",
+  "sha256": "ee1449fb5490fa4031d5be82576f80d78656034c2aed8a5eb2829e272204946e",
+  "baseline_repository": "https://github.com/mihawk-99/PS5_PayloadSDK",
+  "baseline_revision": "b83202be73e930050e00de0f1b4d9ec46c0391bf",
+  "baseline_path": "libc/emutls.c",
+  "baseline_sha256": "86813748aa5668112a0a5891601f5ae36660294a749a013fef7c3bbbd805737c",
+  "license": "Apache-2.0 WITH LLVM-exception",
+  "license_sha256": "29b1fd8f5c323af5f89b86d549ee291ce205009865cc4961aaf7c138b26e691d",
+  "change": "Only __PROSPERO__ cleanup-delay condition plus provenance/explanatory comments; manual alignment allocation policy unchanged/default EMUTLS_USE_POSIX_MEMALIGN=0",
+  "qualification": "local cleanup-order fixture only; native PS5 crash cause unconfirmed"
+}

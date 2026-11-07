@@ -281,7 +281,7 @@ def main():
     parser.add_argument("--opt-level", choices=("0", "1", "2", "3", "s"), default="2",
                         help="production optimization level; changing it invalidates incremental objects")
     parser.add_argument("--only", action="append", help="compile only these source basenames (repeatable)")
-    parser.add_argument("--group", choices=("host", "kernel", "runner", "adapters", "game", "startup", "posix", "cpp-diagnostics", "title-heap"), default="host",
+    parser.add_argument("--group", choices=("host", "kernel", "runner", "adapters", "game", "startup", "posix", "cpp-diagnostics", "title-heap", "tls-cleanup"), default="host",
                         help="actual upstream target source group; no guest substitutes")
     parser.add_argument("--eboot-dir", help="explicit PS5 test-install directory embedded in runner startup")
     parser.add_argument("--xbe-sha256", default="7ce12851850ab46766f77c612b251afe7c8bd81f879e11b4836bdf766be542c6",
@@ -333,6 +333,9 @@ def main():
     if args.group == "startup":
         # Prevent compiler-generated strlen/memcpy helpers before libc exists.
         common += ["-ffreestanding", "-fno-builtin"]
+    if args.group == "tls-cleanup":
+        common += ["-D__PROSPERO__=1", "-DSC2_PS5_APPLICATION=1",
+                   "-DSC2_PS5_TLS_CLEANUP=1"]
     if args.shaderc_include:
         if not (args.shaderc_include / "shaderc/shaderc.h").is_file():
             parser.error("--shaderc-include must contain shaderc/shaderc.h")
@@ -355,6 +358,13 @@ def main():
     sources = [merged / name for name in names]
     if args.group == "title-heap":
         sources = [merged / "sc2_ps5_allocation.c", TITLE_HEAP_MEMORY / "heap_wrap.c"]
+    if args.group == "tls-cleanup":
+        folder = ROOT / "platform/ps5/tls"
+        pin = json.loads((folder / "SOURCE.json").read_text())
+        if (digest(folder / "emutls.c") != pin["sha256"] or
+                digest(folder / "LICENSE-LLVM.txt") != pin["license_sha256"]):
+            parser.error("TLS source/license differs from its reviewed pin")
+        sources = [folder / "emutls.c"]
     if args.group == "host":
         sources += [*imgui_sources, adapter]
     if args.compiler_rt:

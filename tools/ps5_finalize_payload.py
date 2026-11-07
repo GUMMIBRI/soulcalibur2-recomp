@@ -300,6 +300,14 @@ def main():
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, target)
                 platform_notices.append(dict(path=relative.as_posix(), source=record(source)))
+        if receipt.get('tls_cleanup'):
+            for name in ('LICENSE-LLVM.txt', 'SOURCE.json'):
+                source = ROOT / 'platform/ps5/tls' / name
+                relative = Path('legal/PS5-TLS') / name
+                target = out / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, target)
+                platform_notices.append(dict(path=relative.as_posix(), source=record(source)))
         shutil.copyfile(ROOT / 'platform/ps5/RELEASE-ENDNOTE.md', out / 'RELEASE-ENDNOTE.md')
         result = dict(schema='sc2.ps5-finalized-app.v1', input=record(elf), link_receipt=record(receipt_path), converter=record(converter),
                       output=record(converted), self=record(self_file), retained_sections=sections, commands=commands,

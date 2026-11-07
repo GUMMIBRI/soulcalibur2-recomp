@@ -193,8 +193,11 @@ def finalized_app(receipt_path, selected=None):
     selected_metadata = {relative.as_posix() for _, relative in metadata}
     for item in value.get('platform_notices', []):
         relative = Path(item['path'])
-        if relative.as_posix() not in {'legal/PS5-Platform/' + name for name in
-                ('LICENSE-GPL-3.0.txt', 'LICENSE-DLMALLOC-MIT-0.txt', 'SOURCE.json')}:
+        allowed_notices = {'legal/PS5-Platform/' + name for name in
+                ('LICENSE-GPL-3.0.txt', 'LICENSE-DLMALLOC-MIT-0.txt', 'SOURCE.json')}
+        allowed_notices.update({'legal/PS5-TLS/' + name for name in
+                               ('LICENSE-LLVM.txt', 'SOURCE.json')})
+        if relative.as_posix() not in allowed_notices:
             raise ValueError('unrecognized platform notice path')
         source = plain_path(receipt_path.parent / relative)
         record = item['source']

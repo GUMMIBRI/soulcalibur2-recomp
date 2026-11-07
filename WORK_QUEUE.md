@@ -71,6 +71,39 @@ excluded from public Git because it includes private diagnostic references.
 
 ## Expansion lane
 
+Current fix-review result: local sort callback-order fixture passed but native
+ABI remains unknown; its optional link candidate is parked, not installed.
+The stronger emutls cleanup-order fixture reproduces premature cleanup/lost
+TLS state and passes with a one-round delay. Independent final ELF review of
+tls-cleanup-r1 confirms delay1, preserved manual allocation, unchanged C++
+fallback and unchanged SDK sort route. SDK link378imports0missing, raw-syscall
+audit0 and new package admission passed; no console qualification/deployment.
+Public LLVM source/license retained under platform/ps5/tls. Do not combine
+these experiments or assume the lifetime defect caused the observed crash.
+
+Tooling follow-up: historical finalized_app revalidation can fail after another
+link overwrites the shared original-input path. The retained per-candidate
+symbolic ELF still matches its original recorded hash. Preserve raw receipts;
+future finalization should bind immutable input snapshots. This is separate
+from runtime/package byte validity and must not trigger an unchanged rebuild.
+
+Next-release packaging policy relayed from the owner: retain unique folder
+name soulcalibur2, ship its skeleton inside the main app beside eboot.bin,
+and support relocating that entire folder to /data/soulcalibur2 or numeric
+/mnt/usbN/soulcalibur2. Preserve explicit settings/aliases and active saves;
+saves in that data folder remain manual import staging. No policy-only build,
+console migration or /data writes. Public distribution contains placeholders
+and documentation, never owned original game data/private user files.
+
+Inspected gaps: package tool still emits a sibling USB-root soulcalibur2 tree;
+runtime already prioritizes app-contained soulcalibur2 and probes USB0..7 plus
+/data, but automatic game discovery stops at the first complete result rather
+than rejecting ambiguous complete copies. Broader numeric USB namespace is
+accepted for explicit paths, not automatically enumerated beyond that bounded
+range. Texture-root selection needs a separate audit against whole-folder
+selection/no-partial-merge policy. These are source findings, not multi-USB or
+/data console qualification. Current deployed root layout stays unchanged.
+
 Owner graphics policy (November6): continue graphics feature development, but
 leave enhancements off by default while establishing playable fights. Baseline
 is1x internal resolution, original textures, FSR off, shader presets off and
