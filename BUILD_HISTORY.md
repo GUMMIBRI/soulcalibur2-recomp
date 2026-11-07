@@ -37,6 +37,37 @@ interactive gameplay and reliable relaunch are not established.
 
 ## Required record for the next build
 
+### November6 evening: reporting comparison and texture-retirement candidate
+
+Installed select-probes-r1 (cef5a11) reports successful paired scene/cursor
+returns and successful texture/pipeline operations up to diagnostic budgets.
+Human reports SYSTEM_XO; no POSIX fatal observation was captured in the latest
+matching runs. Their final pipeline returns are budget boundaries, not located
+fault sites. Earlier versions reached variable selections and Weapon Master
+map; neither a recent regression nor a successful fight is established.
+
+Independent comparison of run-reports-r1 and select-probes-r1 finds unchanged
+link order/flags, compiler, SDK libraries, SDL, RADV, shaderc, guest objects and
+unwind archives. Only presenter/runner/hooks/startup objects changed. The first
+RADV-dispatch build lacks a preserved full input manifest, limiting comparison;
+converter and loader companion match. Runtime caches/settings were not frozen.
+
+Local candidate texture-retirement-r1 changes only the presenter object against
+select-probes-r1. A draw can retain texture handles while later lookups evict
+them; an internal flush previously released retired handles before that draw
+was queued. A scoped selection depth now defers release through nested flushes;
+scope exit does not release CPU-queued resources. Normal outside flushes record
+the references before retirement. The defect predates the reporting builds.
+
+Independent source review and a local mock using actual helper bodies reproduce
+release-before-queue on baseline and retention through encoding with the fix;
+early-return scope restoration also passes. SDL encoding/release scheduling is
+mocked, so this does not prove the console XO cause. SDK compilation,378 backed
+imports, zero decoded raw syscalls, finalization and package admission passed.
+Candidate is local only, not installed or human qualified. Private finalization:
+private/ps5-app-texture-retirement-r1-20261106/FINALIZATION.json. No unrelated
+submission policy, shaders, assets, caches or saves changed.
+
 Record identifier, commit, exact bounded changes, hypothesis, expected stage,
 actual observed stage, matching finalized and upload receipts, crash evidence,
 and confirmed/rejected/unconfirmed result. Read fresh evidence before changes.

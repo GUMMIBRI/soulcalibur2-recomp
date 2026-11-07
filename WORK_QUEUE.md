@@ -15,21 +15,33 @@ runners, overlapping mutable files, repeated unchanged builds or filler work.
 
 ## Boot lane
 
-Installed candidate remains radv-dispatch-r1, source c4195d4. Its upload receipt
-and exact executable are authoritative. Fresh intro-start-crash.log postdates
-upload and both newest attempts pass save recovery, device/display/swapchain,
-shader modules and GPU queue submissions. Owner confirms intro video playback,
-then Start crash and a crash on second launch. Exact faulting function remains
-unknown pending full thread/backtrace/module data; do not clear caches or infer
-a save-init regression.
+Installed candidate is select-probes-r1, source cef5a11. The authoritative
+receipt is private/native-xbe-retest/SELECT-PROBES-UPLOAD.json. The owner is
+testing other modes; no console replacement, cleanup or autonomous launch.
+Earlier versions reached variable points including character select, Team
+Versus selections and Weapon Master map; no completed fight is qualified.
 
-The callable-provider admission hardening and build-identity helper did not
-change this executable. The helper is unintegrated. A separate native undo
-reader patch is source-only and independently reviewed, not the current crash
-cause or a delivered fix. Do not blend it into a crash candidate blindly.
+Latest matching report has paired returns for all scene/cursor and74 render
+operations. Its final pipeline return coincides with the24-operation epoch
+budget; normal GPU records also exhausted their budget. This boundary does
+not locate the crash. Human SYSTEM_XO report has no matching POSIX fatal
+record in this run; preserve that distinction from earlier SIGSEGV/MAPERR.
 
-Next milestone: localize the Start-transition/relaunch fault, then reach menu
-and interactive gameplay. Human complete backtrace requested, no new launch.
+Independent regression comparison finds identical link order, flags, compiler,
+SDK libraries, SDL, RADV, shaderc, guest objects and unwind archives between
+run-reports-r1 and select-probes-r1. Changed objects: presenter, runner, hooks,
+startup. Earlier radv-dispatch-r1 lacks a preserved complete link manifest;
+converter and loader companion match all three. Runtime cache/settings are
+not covered by frozen link inputs. Do not claim they were identical.
+
+Active bounded review: gpu_startup_audit owns read-only draw/flush/resource
+lifetime inspection; architecture_research owns read-only receipt/reuse
+comparison; save_enumeration owns read-only reporting/concurrency regression
+review. Forge integrates and maintains evidence. No mutable overlap.
+
+A separate native undo reader patch remains parked and unrelated to this
+failure. Do not blend it into a crash candidate. Next milestone is a localized
+failure and bounded reviewed correction, then human qualification of a fight.
 The requested copy-ready handoff is HANDOFF-PROMPT-20261106.txt, intentionally
 excluded from public Git because it includes private diagnostic references.
 

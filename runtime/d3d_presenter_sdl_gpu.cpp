@@ -427,6 +427,7 @@ struct RecompD3dPresenter {
     uint32_t texture_generation = 0u;   // (recomp_d3d_textures_generation when the textures were made)
     // Textures replaced while queued draws still bind them; released after the next flush.
     std::vector<SDL_GPUTexture *> retired_textures;
+    unsigned texture_selection_depth = 0u;
 
     std::vector<RenderTargetEntry> render_targets;
     std::vector<DepthTargetEntry> depth_targets;
@@ -607,6 +608,10 @@ void dropTextures(RecompD3dPresenter *presenter)
 
 void releaseRetiredTextures(RecompD3dPresenter *presenter)
 {
+    // A nested flush records older draws, but the draw currently selecting
+    // textures can still hold a retired handle that has not been queued yet.
+    // Keep those handles until an outside flush records that draw as well.
+    if (presenter->texture_selection_depth != 0u) return;
     for (SDL_GPUTexture *texture : presenter->retired_textures) {
         SDL_ReleaseGPUTexture(presenter->device, texture);
     }
@@ -2264,6 +2269,15 @@ RecompD3dPresenterError submitDraw(RecompD3dPresenter *presenter, const RecompD3
     }
     useTarget(presenter, bound.color, bound.depth);
 
+    struct TextureSelectionScope {
+        unsigned &depth;
+        explicit TextureSelectionScope(unsigned &value) : depth(value) { ++depth; }
+        ~TextureSelectionScope() { --depth; }
+        TextureSelectionScope(const TextureSelectionScope &) = delete;
+        TextureSelectionScope &operator=(const TextureSelectionScope &) = delete;
+    } texture_selection(presenter->texture_selection_depth);
+    // Do not release on scope exit: this draw may only be CPU-queued then.
+    // The next outside flush acquires SDL command references before release.
     SDL_GPUTexture *texture = draw.has_texture ? lookupDrawTexture(presenter, draw) : nullptr;
     /* A general pixel program samples its stage textures, in slots 0 to 2. */
     SDL_GPUTexture *stage_texture[3]{};
