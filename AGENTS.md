@@ -27,9 +27,15 @@ only; /data assets are read-only. No internal writes, permissions changes,
 cache clearing, autonomous launching, gameplay or reboot. Deletion is limited
 to the owner-authorized cleanup of complete, locally preserved diagnostic
 logs after collection; preserve active/changing logs, caches and saves. Obtain
-fresh games-closed confirmation before replacing an installed eboot. If a
-specific future overwrite/deletion is necessary, resolve its authorization
-against the owner's current instructions before execution.
+fresh games-closed confirmation only when explicitly required by a later
+owner instruction. Current owner override removes the blanket closure gate
+for an already-authorized executable update: stage the complete file, verify
+it, and stop on an actual in-use/read-only/unknown transfer failure without
+forcing permissions or closing anything. A new executable takes effect on
+the next owner launch. Preserve active/changing diagnostic logs; uncertainty
+about log activity may defer cleanup, never force game closure. If a specific
+future overwrite/deletion is necessary, resolve its authorization against the
+owner's current instructions before execution.
 
 Transfer verification: local SHA256, upload completion and remote type/size.
 Never stream large files back over LAN just to hash them. Small diagnostic log
