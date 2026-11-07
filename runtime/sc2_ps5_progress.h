@@ -9,13 +9,14 @@
 #include <thread>
 
 extern "C" void sc2_ps5_log_stage(const char *) __attribute__((weak));
+extern "C" void sc2_ps5_log_address(const char *, uintptr_t) __attribute__((weak));
 
 /* One render-owner writer; start/stop/destruction also belong to that owner.
  * Phase names MUST be immutable static string literals, never temporary text.
  * Updates only publish atomic values: no formatting, allocation or syscalls.
  * The observer reports absence of progress, never establishes a hang cause.
- * A different long stall can produce another record: maximum ~0.5 records/s,
- * so reports can grow during a session with many separate long stalls.
+ * A heartbeat reports sampled progress once per second, independently of
+ * stalled-phase reports. Report size grows with session duration.
  */
 class SC2PS5Progress {
     static_assert(std::atomic<uint64_t>::is_always_lock_free &&
@@ -49,7 +50,7 @@ class SC2PS5Progress {
         s.serial = serial_.load();
         return before == s.serial;
     }
-    static void report(const Snapshot &s) {
+    static void report(const Snapshot &s, const char *kind) {
         if (!sc2_ps5_log_stage) return;
         char line[512]; size_t used = 0;
         const auto text = [&](const char *p) {
@@ -63,7 +64,7 @@ class SC2PS5Progress {
                 shift -= 4; line[used++] = "0123456789abcdef"[(value >> shift) & 15u];
             }
         };
-        text("render-progress unchanged>=2s serial="); hex(s.serial);
+        text("render-progress "); text(kind); text(" serial="); hex(s.serial);
         text(" phase="); text(s.phase); text(" completed="); text(s.completed);
         text(" frame="); hex(s.frame); text(" draw="); hex(s.draw);
         text(" object_value="); hex(s.object);
@@ -73,20 +74,39 @@ class SC2PS5Progress {
         sc2_ps5_log_stage(line);
     }
     void observe() {
+        sc2_ps5_log_stage("render-progress observer worker started; heartbeat=1s unchanged=2s");
         Snapshot last{};
-        uint64_t since = SDL_GetTicks(), reported = UINT64_MAX;
-        bool have_last = false;
+        uint64_t since = SDL_GetTicks(), heartbeat = since, reported = UINT64_MAX;
+        bool have_last = false, woke = false, rejected = false;
         while (!stopping_.load()) {
             SDL_Delay(250);
             if (stopping_.load()) break;
+            if (!woke) {
+                woke = true;
+                sc2_ps5_log_stage("render-progress observer first delay returned; snapshot not yet qualified");
+                if (sc2_ps5_log_address) {
+                    sc2_ps5_log_address("observer first-wake elapsed ticks", SDL_GetTicks() - since);
+                    sc2_ps5_log_address("observer first-wake raw sequence", serial_.load());
+                }
+            }
             Snapshot current;
-            if (!snapshot(current)) continue;
+            if (!snapshot(current)) {
+                if (!rejected) {
+                    rejected = true;
+                    sc2_ps5_log_stage("render-progress observer awake; snapshot rejected as odd/changing at least once");
+                }
+                continue;
+            }
             const uint64_t now = SDL_GetTicks();
+            if (now - heartbeat >= 1000) {
+                heartbeat = now;
+                report(current, "heartbeat");
+            }
             if (!have_last || current.serial != last.serial) {
                 last = current; since = now; have_last = true;
             } else if (now - since >= 2000 && reported != current.serial) {
                 reported = current.serial;
-                report(current);
+                report(current, "unchanged>=2s");
             }
         }
     }
@@ -105,6 +125,7 @@ public:
             sc2_ps5_log_stage("render-progress observer unavailable; diagnostic disabled");
             return false;
         }
+        sc2_ps5_log_stage("render-progress observer thread created; scheduling not yet proven");
         return true;
     }
     void stop() {

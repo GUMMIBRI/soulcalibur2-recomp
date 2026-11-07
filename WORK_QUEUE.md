@@ -37,11 +37,20 @@ startup. Earlier radv-dispatch-r1 lacks a preserved complete link manifest;
 converter and loader companion match all three. Runtime cache/settings are
 not covered by frozen link inputs. Do not claim they were identical.
 
-Active bounded work: Forge owns presenter phase instrumentation;
-architecture_research owns only sc2_ps5_progress.h; gpu_startup_audit reviews
-those changes independently. The low-rate observer records an unchanged
-checkpoint after2seconds independently of exhausted normal probe budgets.
-It observes lack of progress, not a cause or proof of GPU completion. Source
+Current installed build is now progress-watch-r1 (d5b7f01), as recorded in
+private/native-xbe-retest/PROGRESS-WATCH-UPLOAD.json. Two fresh matching runs
+have no observer record, fatal observation or GPU-negative result. Silence
+does not establish a blocked graphics operation: the first observer lacks
+success/wake/heartbeat markers. Talim is simply the initial P1 display, with
+no evidence of a character-specific cause.
+
+Active bounded work: Forge owns a local progress-watch-r2 recorder revision;
+hang_evidence_review independently checks evidence and provider coherence;
+scheduler_reuse_review prepares only a private transactional ring-growth patch
+and failure-injection fixture. No overlapping tracked source ownership.
+The recorder revision acknowledges worker entry, first completed delay and
+rejected sampling, and emits coherent one-second heartbeats plus unchanged
+checkpoints. It observes progress, not a cause or proof of GPU completion. Source
 inspection of fibers/scheduler found no proven character-select cause; a
 separate latent nested-drain starvation defect remains unconnected to this
 path. Do not blend unrelated fixes into the diagnostic candidate.
@@ -49,6 +58,14 @@ path. Do not blend unrelated fixes into the diagnostic candidate.
 A separate native undo reader patch remains parked and unrelated to this
 failure. Do not blend it into a crash candidate. Next milestone is a localized
 failure and bounded reviewed correction, then human qualification of a fight.
+
+Independent source evaluation also confirms separate stabilization work:
+preserve/propagate failed GPU submission and image upload map/copy results;
+make ring replacement transactional and check size conversion/growth bounds.
+These are correctness gaps, not established freeze causes. Keep this work
+isolated from progress-watch-r1, whose next predicted outcome is a persisted
+unchanged operation/thread checkpoint. Normal shell-exit behavior is a
+separate issue from freezes and fatal signals.
 The requested copy-ready handoff is HANDOFF-PROMPT-20261106.txt, intentionally
 excluded from public Git because it includes private diagnostic references.
 

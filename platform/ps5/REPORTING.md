@@ -51,9 +51,16 @@ dereferenced to identify native code or resources.
 A separate observer samples every250ms and emits one `render-progress` record
 when a coherent checkpoint remains unchanged for at least2seconds. It uses the
 existing per-run sink independently of normal render/GPU logging budgets.
-The rendering thread performs no checkpoint formatting or file I/O. Distinct
-long stalls can produce further records, so log size is rate-limited rather
-than fixed. No record is guaranteed if the process or observer also stops.
+The next diagnostic revision also acknowledges worker entry and its first
+completed delay before requiring a coherent snapshot. A one-second snapshot
+heartbeat distinguishes continuing render progress from an unchanged phase;
+one rejected-snapshot marker records that the observer woke but could not
+obtain a coherent sample. Thread construction alone does not prove the worker
+ran. First-wake elapsed ticks and raw sequence are unqualified scalar
+observations, not a coherent render snapshot.
+The rendering thread performs no checkpoint formatting or file I/O. Heartbeats
+and distinct long stalls can produce further records, so log size grows with
+session duration. No record is guaranteed if the process or observer also stops.
 
 An unchanged checkpoint indicates absent observed progress, not a diagnosed
 hang, GPU completion or API success. `phase` and `object_value` describe the
