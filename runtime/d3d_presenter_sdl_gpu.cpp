@@ -129,6 +129,90 @@ uint64_t textureFingerprint(const void *bytes, uint32_t count)
     return hash;
 }
 
+
+#if defined(SC2_PS5)
+extern "C" uint32_t sc2_ps5_diag_scene_generation(void) __attribute__((weak));
+extern "C" uint32_t sc2_ps5_diag_scene_id(void) __attribute__((weak));
+// Observation only; object/source/descriptor are POINTER VALUES, never read.
+// Kind1 lookup: object=guest data; descriptor=CPUdesc; source=CPUbytes;
+// count=bytes, a/b/c=width/height/format. Kind2 upload: object=GPUtexture;
+// source=CPUbytes; count=bytes, a/b/c=width/height/mip. Kind3 pipeline:
+// object/source=VS/PS pointers; descriptor=CPUkey; count=cache size;
+// a/b/c=stride/FVF/samples. No execution-thread identity is inferred.
+struct PS5RenderProbe {
+    unsigned id = 0, generation = 0, scene = 0, kind = 0;
+    uint64_t key = 0, object = 0, descriptor = 0, source = 0, count = 0;
+    uint64_t a = 0, b = 0, c = 0;
+};
+static unsigned ps5_probe_state_busy, ps5_probe_emit_busy;
+static unsigned ps5_probe_total, ps5_probe_generation, ps5_probe_scene_count;
+static unsigned ps5_probe_kind_counts[4];
+struct PS5ProbeSeen { unsigned kind; uint64_t key; };
+static PS5ProbeSeen ps5_probe_seen[24];
+uint64_t ps5ProbeMix(uint64_t hash, uint64_t word) { return (hash ^ word) * 0x100000001b3ull; }
+uint64_t ps5TextureProbeKey(const RecompD3dPresenterDrawCommand &draw)
+{
+    const auto &d = draw.texture;
+    uint64_t hash = 0xcbf29ce484222325ull;
+    for (uint64_t word : {uint64_t(d.data), uint64_t(d.width), uint64_t(d.height),
+            uint64_t(d.volume_depth), uint64_t(d.format_byte), uint64_t(d.mip_levels),
+            uint64_t(d.pitch), uint64_t(draw.texture_byte_count),
+            uint64_t(reinterpret_cast<uintptr_t>(draw.texture_bytes))}) hash = ps5ProbeMix(hash, word);
+    return hash;
+}
+PS5RenderProbe ps5BeginRenderProbe(unsigned kind, uint64_t key, uint64_t object,
+        uint64_t descriptor, uint64_t source, uint64_t count, uint64_t a, uint64_t b, uint64_t c)
+{
+    PS5RenderProbe probe;
+    if (!sc2_ps5_log_stage || kind < 1 || kind > 3 ||
+        __atomic_exchange_n(&ps5_probe_state_busy, 1u, __ATOMIC_ACQUIRE)) return probe;
+    const unsigned generation = sc2_ps5_diag_scene_generation ? sc2_ps5_diag_scene_generation() : 0;
+    const unsigned scene = sc2_ps5_diag_scene_id ? sc2_ps5_diag_scene_id() : 0;
+    if (generation != ps5_probe_generation) {
+        ps5_probe_generation = generation; ps5_probe_scene_count = 0;
+        for (unsigned &value : ps5_probe_kind_counts) value = 0;
+    }
+    bool seen = false;
+    for (unsigned i = 0; i < ps5_probe_scene_count; ++i)
+        if (ps5_probe_seen[i].kind == kind && ps5_probe_seen[i].key == key) seen = true;
+    if (!seen && ps5_probe_total < 128 && ps5_probe_scene_count < 24 && ps5_probe_kind_counts[kind] < 8) {
+        ps5_probe_seen[ps5_probe_scene_count++] = {kind, key}; ++ps5_probe_kind_counts[kind];
+        probe = {++ps5_probe_total, generation, scene, kind, key, object, descriptor, source, count, a, b, c};
+    }
+    __atomic_store_n(&ps5_probe_state_busy, 0u, __ATOMIC_RELEASE);
+    return probe;
+}
+void ps5RenderProbeEmit(const PS5RenderProbe &probe, const char *phase, uint64_t result = 0)
+{
+    if (!probe.id || !sc2_ps5_log_stage ||
+        __atomic_exchange_n(&ps5_probe_emit_busy, 1u, __ATOMIC_ACQUIRE)) return;
+    const int saved_errno = errno;
+    char line[512]; unsigned used = 0;
+    const auto text = [&](const char *value) {
+        for (unsigned i = 0; i < 80 && value[i] && used + 1 < sizeof line; ++i) line[used++] = value[i];
+    };
+    const auto number = [&](uint64_t value) {
+        char digits[20]; unsigned count = 0;
+        do { digits[count++] = char('0' + value % 10u); value /= 10u; } while (value);
+        while (count && used + 1 < sizeof line) line[used++] = digits[--count];
+    };
+    const auto hex = [&](uint64_t value) {
+        text("0x");
+        for (int shift = 60; shift >= 0 && used + 1 < sizeof line; shift -= 4)
+            line[used++] = "0123456789abcdef"[(value >> shift) & 15u];
+    };
+    text("render-probe id="); number(probe.id); text(" epoch="); number(probe.generation);
+    text(" scene_snapshot="); number(probe.scene); text(" kind="); number(probe.kind);
+    text(" phase="); text(phase); text(" key="); hex(probe.key);
+    text(" object="); hex(probe.object); text(" descriptor="); hex(probe.descriptor);
+    text(" source="); hex(probe.source); text(" count="); number(probe.count);
+    text(" a="); number(probe.a); text(" b="); number(probe.b); text(" c="); number(probe.c);
+    text(" result="); hex(result); line[used] = 0;
+    sc2_ps5_log_stage(line); errno = saved_errno;
+    __atomic_store_n(&ps5_probe_emit_busy, 0u, __ATOMIC_RELEASE);
+}
+#endif
+
 struct TextureEntry {
     bool used = false;
     uint32_t data = 0u;
@@ -778,12 +862,28 @@ bool uploadTexture(RecompD3dPresenter *presenter, SDL_GPUTexture *texture, const
     uint32_t size, uint32_t level, uint32_t width, uint32_t height, uint32_t depth = 1u,
     uint32_t pixels_per_row = 0u)
 {
+#if defined(SC2_PS5)
+    uint64_t probe_key = ps5ProbeMix(reinterpret_cast<uintptr_t>(texture), size);
+    probe_key = ps5ProbeMix(probe_key, level);
+    probe_key = ps5ProbeMix(probe_key, (uint64_t(width) << 32) | height);
+    const auto probe = ps5BeginRenderProbe(2, probe_key, reinterpret_cast<uintptr_t>(texture),
+        0, reinterpret_cast<uintptr_t>(bytes), size, width, height, level);
+    ps5RenderProbeEmit(probe, "upload-enter");
+#endif
     SDL_GPUTransferBufferCreateInfo info{SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, size, 0};
     SDL_GPUTransferBuffer *transfer = SDL_CreateGPUTransferBuffer(presenter->device, &info);
-    if (transfer == nullptr) return false;
+    if (transfer == nullptr) {
+#if defined(SC2_PS5)
+        ps5RenderProbeEmit(probe, "upload-return", 0);
+#endif
+        return false;
+    }
     void *mapped = SDL_MapGPUTransferBuffer(presenter->device, transfer, false);
     if (mapped == nullptr) {
         SDL_ReleaseGPUTransferBuffer(presenter->device, transfer);
+#if defined(SC2_PS5)
+        ps5RenderProbeEmit(probe, "upload-return", 0);
+#endif
         return false;
     }
     std::memcpy(mapped, bytes, size);
@@ -796,6 +896,9 @@ bool uploadTexture(RecompD3dPresenter *presenter, SDL_GPUTexture *texture, const
         SDL_EndGPUCopyPass(pass);
     }
     SDL_ReleaseGPUTransferBuffer(presenter->device, transfer);
+#if defined(SC2_PS5)
+    ps5RenderProbeEmit(probe, "upload-return", pass != nullptr);
+#endif
     return pass != nullptr;
 }
 
@@ -1060,7 +1163,11 @@ SDL_GPUTexture *replacementTexture(RecompD3dPresenter *presenter, uint64_t key)
     return texture;
 }
 
-SDL_GPUTexture *lookupTexture(RecompD3dPresenter *presenter, const RecompD3dPresenterDrawCommand &draw)
+SDL_GPUTexture *lookupTexture(RecompD3dPresenter *presenter, const RecompD3dPresenterDrawCommand &draw
+#if defined(SC2_PS5)
+    , const PS5RenderProbe *probe = nullptr
+#endif
+)
 {
     if (const uint32_t generation = recomp_d3d_textures_generation(); generation != presenter->texture_generation) {
         presenter->texture_generation = generation;
@@ -1120,6 +1227,9 @@ SDL_GPUTexture *lookupTexture(RecompD3dPresenter *presenter, const RecompD3dPres
     const bool fingerprinted = !linear_bgra && draw.texture_bytes != nullptr;
     const uint64_t fingerprint = fingerprinted
         ? textureFingerprint(draw.texture_bytes, draw.texture_byte_count) : 0u;
+#if defined(SC2_PS5)
+    if (probe) ps5RenderProbeEmit(*probe, fingerprinted ? "lookup-fingerprint" : "lookup-no-fingerprint", fingerprint);
+#endif
     for (auto it = cached.first; it != cached.second; ++it) {
         TextureEntry &entry = presenter->textures[it->second];
         if (entry.format_byte == desc.format_byte && entry.width == desc.width &&
@@ -1263,6 +1373,22 @@ SDL_GPUTexture *lookupTexture(RecompD3dPresenter *presenter, const RecompD3dPres
     entry.texture = texture;
     presenter->texture_index.emplace(desc.data, slot);
     return texture;
+}
+
+// Calls the original lookup once; observed metadata does not change its decision.
+SDL_GPUTexture *lookupDrawTexture(RecompD3dPresenter *presenter, const RecompD3dPresenterDrawCommand &draw)
+{
+#if defined(SC2_PS5)
+    const auto probe = ps5BeginRenderProbe(1, ps5TextureProbeKey(draw), draw.texture.data,
+        reinterpret_cast<uintptr_t>(&draw.texture), reinterpret_cast<uintptr_t>(draw.texture_bytes),
+        draw.texture_byte_count, draw.texture.width, draw.texture.height, draw.texture.format_byte);
+    ps5RenderProbeEmit(probe, "lookup-enter");
+    SDL_GPUTexture *result = lookupTexture(presenter, draw, &probe);
+    ps5RenderProbeEmit(probe, "lookup-return", reinterpret_cast<uintptr_t>(result));
+    return result;
+#else
+    return lookupTexture(presenter, draw);
+#endif
 }
 
 /* ---- Shaders and pipelines ------------------------------------------------ */
@@ -1591,10 +1717,20 @@ SDL_GPUGraphicsPipeline *lookupPipeline(RecompD3dPresenter *presenter, const Pip
     info.vertex_input_state.num_vertex_attributes =
         vertexAttributes(state.shaders.layout, state.coverage_only, attributes);
 
+#if defined(SC2_PS5)
+    const auto probe = ps5BeginRenderProbe(3, PipelineKeyHash{}(key),
+        reinterpret_cast<uintptr_t>(state.shaders.vertex), reinterpret_cast<uintptr_t>(&key),
+        reinterpret_cast<uintptr_t>(state.shaders.fragment), presenter->pipelines.size(),
+        state.stride, state.fvf, state.samples);
+    ps5RenderProbeEmit(probe, "pipeline-create-enter");
+#endif
     const auto start = std::chrono::steady_clock::now();
     SDL_GPUGraphicsPipeline *pipeline = SDL_CreateGPUGraphicsPipeline(presenter->device, &info);
     const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - start).count();
+#if defined(SC2_PS5)
+    ps5RenderProbeEmit(probe, "pipeline-create-return", reinterpret_cast<uintptr_t>(pipeline));
+#endif
     if (ms >= 20) {
         std::fprintf(stderr, "recomp d3d presenter: slow pipeline fvf=0x%03X in %lld ms (%zu cached)\n",
             state.fvf, static_cast<long long>(ms), presenter->pipelines.size());
@@ -2128,7 +2264,7 @@ RecompD3dPresenterError submitDraw(RecompD3dPresenter *presenter, const RecompD3
     }
     useTarget(presenter, bound.color, bound.depth);
 
-    SDL_GPUTexture *texture = draw.has_texture ? lookupTexture(presenter, draw) : nullptr;
+    SDL_GPUTexture *texture = draw.has_texture ? lookupDrawTexture(presenter, draw) : nullptr;
     /* A general pixel program samples its stage textures, in slots 0 to 2. */
     SDL_GPUTexture *stage_texture[3]{};
     if (general) {
@@ -2146,7 +2282,7 @@ RecompD3dPresenterError submitDraw(RecompD3dPresenter *presenter, const RecompD3
             lookup.palette_byte_count = stage.palette_byte_count;
             const RenderTargetEntry *sampled = findRenderTarget(presenter, stage.desc);
             if (sampled != nullptr && sampled->render == bound.color) return unsupportedDraw(__LINE__);
-            stage_texture[i] = lookupTexture(presenter, lookup);
+            stage_texture[i] = lookupDrawTexture(presenter, lookup);
             if (stage_texture[i] == nullptr) {
                 std::fprintf(stderr, "recomp d3d presenter: stage %u texture data=0x%08X fmt=0x%02X size=%ux%u"
                     " linear=%d pitch=%u bytes=%u\n", i, stage.desc.data, stage.desc.format_byte,
@@ -2164,7 +2300,7 @@ RecompD3dPresenterError submitDraw(RecompD3dPresenter *presenter, const RecompD3
         lookup.texture_byte_count = draw.alpha_mask_byte_count;
         lookup.palette_bytes = draw.alpha_mask_palette;
         lookup.palette_byte_count = draw.alpha_mask_palette_byte_count;
-        mask = lookupTexture(presenter, lookup);
+        mask = lookupDrawTexture(presenter, lookup);
         if (mask == nullptr || texture == nullptr) return unsupportedDraw(__LINE__);
     }
     const auto reflectionLookup = [&](const RecompD3dTextureDesc &desc, const void *bytes, uint32_t count,
@@ -2174,7 +2310,7 @@ RecompD3dPresenterError submitDraw(RecompD3dPresenter *presenter, const RecompD3
         lookup.texture = desc;
         lookup.texture_bytes = bytes;
         lookup.texture_byte_count = count;
-        return lookupTexture(presenter, lookup);
+        return lookupDrawTexture(presenter, lookup);
     };
     if (draw.has_reflection || draw.program_alpha_mask) {
         if (draw.has_alpha_mask || draw.four_tap_filter || layout.pretransformed ||

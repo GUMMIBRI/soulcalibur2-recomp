@@ -62,14 +62,15 @@ static int sc2_root_allowed(void)
 /* Never overwrite a previous run. A native counter plus O_EXCL resolves
    collisions even if the counter resets across process launches. All output
    stays inside the compiled app folder. No libc/heap or directory listing. */
-static void sc2_write_all(int fd, const char *data, size_t size)
+static int sc2_write_all(int fd, const char *data, size_t size)
 {
     size_t at = 0;
     while (at < size) {
         const int64_t wrote = sceKernelWrite(fd, data + at, size - at);
-        if (wrote <= 0 || (uint64_t)wrote > size - at) break;
+        if (wrote <= 0 || (uint64_t)wrote > size - at) return 0;
         at += (size_t)wrote;
     }
+    return 1;
 }
 static size_t sc2_append_text(char *out, size_t at, const char *text)
 {
@@ -108,7 +109,12 @@ static int sc2_begin_run_report(void)
             O_WRONLY | O_CREAT | O_EXCL | O_APPEND | O_NOFOLLOW, (mode_t)0600);
         if (sc2_run_descriptor >= 0) {
             static const char header[] = "SC2 per-run report v1; end without shutdown marker is not a diagnosed cause\n";
-            sc2_write_all(sc2_run_descriptor, header, sizeof header - 1);
+            if (!sc2_write_all(sc2_run_descriptor, header, sizeof header - 1)) {
+                (void)sceKernelClose(sc2_run_descriptor);
+                sc2_run_descriptor = -1;
+                sc2_run_path[0] = 0;
+                return 0;
+            }
             return 1;
         }
         /* Only an actual native EEXIST warrants trying another fresh name. */
@@ -137,7 +143,11 @@ __attribute__((visibility("default"))) void sc2_ps5_log_stage(const char *stage)
     for (i = 0; i < 512 && stage[i]; ++i)
         record[used++] = stage[i] == '\n' || stage[i] == '\r' ? ' ' : stage[i];
     record[used++] = '\n';
-    if (sc2_run_descriptor >= 0) sc2_write_all(sc2_run_descriptor, record, used);
+    /* Keep startup.log as a small per-run index once the dedicated sink
+       works. Avoid duplicate per-frame disk opens/writes while testing. A
+       failed report write still falls through to the legacy fallback. */
+    if (sc2_run_descriptor >= 0 && sc2_write_all(sc2_run_descriptor, record, used) &&
+        __atomic_load_n(&sc2_startup_sequence, __ATOMIC_RELAXED) > 8u) return;
     fd = sceKernelOpen(sc2_startup_path, O_WRONLY | O_CREAT | O_APPEND | O_NOFOLLOW, (mode_t)0600);
     if (fd < 0) return;
     for (i = 0; i < used;) {
@@ -170,7 +180,7 @@ void sc2_ps5_write_fault_line(const char *text, size_t length)
 
 /* Record pointer values only. Never read instructions in PS5 execute-only
    text to identify a module. Imported anchors can help compare crash ranges. */
-static void sc2_log_address(const char *label, uintptr_t address)
+void sc2_ps5_log_address(const char *label, uintptr_t address)
 {
     char line[512];
     size_t at = sc2_append_text(line, 0, label);
@@ -207,8 +217,8 @@ void sc2_ps5_start(void *parameters, void (*loader_teardown)(void))
     sc2_ps5_log_stage("application entry before CRT");
     sc2_ps5_log_stage(per_run ? sc2_run_path : "per-run report unavailable; startup.log fallback active");
     sc2_ps5_log_stage(sc2_ps5_build_id ? sc2_ps5_build_id : "SC2 build-id: legacy/unembedded");
-    sc2_log_address("anchor app entry", (uintptr_t)&sc2_ps5_start);
-    sc2_log_address("anchor libkernel open", (uintptr_t)&sceKernelOpen);
-    sc2_log_address("anchor libc malloc", (uintptr_t)&__real_malloc);
+    sc2_ps5_log_address("anchor app entry", (uintptr_t)&sc2_ps5_start);
+    sc2_ps5_log_address("anchor libkernel open", (uintptr_t)&sceKernelOpen);
+    sc2_ps5_log_address("anchor libc malloc", (uintptr_t)&__real_malloc);
     _start(parameters, loader_teardown);
 }

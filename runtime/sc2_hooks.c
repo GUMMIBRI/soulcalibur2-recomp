@@ -137,6 +137,56 @@ uint32_t sc2_scene;
 uint32_t sc2_scene_switches;
 int sc2_movie_skip;
 
+#if defined(SC2_PS5)
+extern void sc2_ps5_log_stage(const char *stage) __attribute__((weak));
+static unsigned sc2_scene_probe_count, sc2_cursor_probe_count;
+/* Diagnostic epoch includes cursor transitions; it is NOT the game's scene
+ * switch counter, which remains unchanged by these observations. */
+static uint32_t sc2_diag_scene_id, sc2_diag_scene_generation;
+uint32_t sc2_ps5_diag_scene_generation(void)
+{
+    return __atomic_load_n(&sc2_diag_scene_generation, __ATOMIC_ACQUIRE);
+}
+uint32_t sc2_ps5_diag_scene_id(void)
+{
+    return __atomic_load_n(&sc2_diag_scene_id, __ATOMIC_RELAXED);
+}
+/* Diagnostic formatting is stack-only and never reads native instruction bytes. */
+static char *sc2_probe_text(char *out, const char *text)
+{
+    while (*text) *out++ = *text++;
+    return out;
+}
+static char *sc2_probe_hex(char *out, uint32_t value)
+{
+    *out++ = '0'; *out++ = 'x';
+    for (unsigned shift = 32; shift; ) {
+        shift -= 4;
+        *out++ = "0123456789abcdef"[(value >> shift) & 15u];
+    }
+    return out;
+}
+static void sc2_hook_probe(const char *phase, uint32_t function, uint32_t guest_return,
+                          uint32_t object, uint32_t detail, uint32_t pressed)
+{
+    if (sc2_ps5_log_stage == NULL) return;
+    char line[256], *out = line;
+    out = sc2_probe_text(out, "guest-transition "); out = sc2_probe_text(out, phase);
+    out = sc2_probe_text(out, " function="); out = sc2_probe_hex(out, function);
+    out = sc2_probe_text(out, " return="); out = sc2_probe_hex(out, guest_return);
+    out = sc2_probe_text(out, " scene="); out = sc2_probe_hex(out, sc2_scene);
+    out = sc2_probe_text(out, " generation="); out = sc2_probe_hex(out, sc2_scene_switches);
+    out = sc2_probe_text(out, " epoch="); out = sc2_probe_hex(out, sc2_ps5_diag_scene_generation());
+    out = sc2_probe_text(out, " object="); out = sc2_probe_hex(out, object);
+    out = sc2_probe_text(out, " detail="); out = sc2_probe_hex(out, detail);
+    out = sc2_probe_text(out, " pressed="); out = sc2_probe_hex(out, pressed);
+    *out = 0;
+    const RecompRegisters saved = recomp_runtime.registers;
+    sc2_ps5_log_stage(line);
+    recomp_runtime.registers = saved;
+}
+#endif
+
 /* 0x502A0(scene, fade): asks for the next scene ([0x398704]); the main loop
    switches to it once the fade is done. */
 static void scene_switch(void)
@@ -145,7 +195,20 @@ static void scene_switch(void)
     sc2_scene = *recomp_memory_u32(esp + 4u);
     ++sc2_scene_switches;
     fprintf(stderr, "recomp sc2: scene %u\n", sc2_scene);
+#if defined(SC2_PS5)
+    __atomic_store_n(&sc2_diag_scene_id, sc2_scene, __ATOMIC_RELAXED);
+    __atomic_add_fetch(&sc2_diag_scene_generation, 1u, __ATOMIC_RELEASE);
+    const bool probe = sc2_scene_probe_count < 96u;
+    const uint32_t guest_return = *recomp_memory_u32(esp);
+    if (probe) {
+        ++sc2_scene_probe_count;
+        sc2_hook_probe("scene-enter", 0x000502A0u, guest_return, 0u, sc2_scene, 0u);
+    }
+#endif
     sub_000502A0();
+#if defined(SC2_PS5)
+    if (probe) sc2_hook_probe("scene-return", 0x000502A0u, guest_return, 0u, sc2_scene, 0u);
+#endif
 }
 
 /* 0x2ABC0(sprite), the menus' sprite draw. A sprite: centre x, y (+0, +4),
@@ -252,7 +315,7 @@ static int open_in_column(int cell, int step)
     return -1;
 }
 
-static void cursor_move(void)
+static void cursor_move_original(void)
 {
     const uint32_t esp = recomp_runtime.registers.esp, cursor = recomp_runtime.registers.ecx;
     const uint32_t player = *recomp_memory_u32(esp + 4u), pressed = *recomp_memory_u32(esp + 8u);
@@ -277,6 +340,56 @@ static void cursor_move(void)
     recomp_runtime.registers = saved;
     *recomp_memory_u32(esp + 8u) = pressed & ~(uint32_t)(PAD_UP | PAD_DOWN);
     sub_0006B000();
+}
+
+static void cursor_move(void)
+{
+#if defined(SC2_PS5)
+    /* Track a few actual cursor objects, not assumed character/player IDs.
+     * A held direction with unchanged cell does not produce per-frame output. */
+    static struct { uint32_t object, cell, pressed; bool used; } seen[4];
+    static uint32_t seen_scene_generation;
+    if (sc2_cursor_probe_count >= 96u) { cursor_move_original(); return; }
+    if (seen_scene_generation != sc2_scene_switches) {
+        for (unsigned i = 0; i < 4u; ++i) seen[i].used = false;
+        seen_scene_generation = sc2_scene_switches;
+    }
+    const uint32_t esp = recomp_runtime.registers.esp, cursor = recomp_runtime.registers.ecx;
+    const uint32_t pressed = *recomp_memory_u32(esp + 8u);
+    const int16_t *c = (const int16_t *)recomp_memory(cursor + 4u, 0x12u);
+    const uint32_t cell = (uint32_t)(int32_t)c[2];
+    const uint32_t relevant = pressed & 0xf000u;
+    unsigned slot = 4u;
+    for (unsigned i = 0; i < 4u; ++i) {
+        if (seen[i].used && seen[i].object == cursor) { slot = i; break; }
+        if (!seen[i].used && slot == 4u) slot = i;
+    }
+    const bool probe = slot < 4u && (!seen[slot].used || seen[slot].cell != cell ||
+                        (relevant && relevant != seen[slot].pressed));
+    const uint32_t guest_return = *recomp_memory_u32(esp);
+    if (probe) {
+        ++sc2_cursor_probe_count;
+        __atomic_add_fetch(&sc2_diag_scene_generation, 1u, __ATOMIC_RELEASE);
+        sc2_hook_probe("cursor-enter", 0x0006B000u, guest_return, cursor, cell, pressed);
+    }
+    cursor_move_original();
+    /* Both authenticated original return paths publish the signed cell in
+     * EAX. Observe that result instead of rereading cursor memory after call. */
+    const uint32_t after = recomp_runtime.registers.eax;
+    if (probe || (slot < 4u && after != cell && sc2_cursor_probe_count < 96u)) {
+        if (!probe) {
+            ++sc2_cursor_probe_count;
+            __atomic_add_fetch(&sc2_diag_scene_generation, 1u, __ATOMIC_RELEASE);
+        }
+        sc2_hook_probe("cursor-return", 0x0006B000u, guest_return, cursor, after, pressed);
+    }
+    if (slot < 4u) {
+        seen[slot].used = true; seen[slot].object = cursor;
+        seen[slot].cell = after; seen[slot].pressed = relevant;
+    }
+#else
+    cursor_move_original();
+#endif
 }
 
 uint32_t sc2_net_seed;

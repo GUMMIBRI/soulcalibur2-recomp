@@ -50,6 +50,7 @@
 #if defined(SC2_PS5)
 #include "sc2_fsr.h"
 extern "C" void sc2_ps5_log_stage(const char *stage);
+extern "C" void sc2_ps5_log_address(const char *label, std::uintptr_t address);
 #define SC2_PS5_STAGE(stage) sc2_ps5_log_stage(stage)
 #else
 #define SC2_PS5_STAGE(stage) ((void)0)
@@ -1528,6 +1529,10 @@ int main(int argc, char **argv)
         return 1;
     }
     SC2_PS5_STAGE("runner:game-image-ready");
+#if defined(SC2_PS5)
+    sc2_ps5_log_address("guest image host base", reinterpret_cast<std::uintptr_t>(memory.data()));
+    sc2_ps5_log_address("guest image host bytes", static_cast<std::uintptr_t>(memory.size()));
+#endif
     if (!discImage.empty()) discRoot = std::filesystem::absolute(std::filesystem::u8path(discImage)).string();
     if (discRoot.empty()) discRoot = std::filesystem::absolute(std::filesystem::u8path(xbePath)).parent_path().string();
     const auto discPath = std::filesystem::u8path(discRoot);
