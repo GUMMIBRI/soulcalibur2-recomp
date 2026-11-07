@@ -47,6 +47,15 @@ excluded from public Git because it includes private diagnostic references.
 
 ## Expansion lane
 
+Owner graphics policy (November6): continue graphics feature development, but
+leave enhancements off by default while establishing playable fights. Baseline
+is1x internal resolution, original textures, FSR off, shader presets off and
+optional antialiasing off. Keep the controls available for explicit opt-in;
+do not remove capabilities or force enhanced presets. Existing pure/default
+settings already select these values. Fullscreen presentation is independent
+of internal rendering scale. Previously saved explicit selections are not
+evidence of defaults and must not be silently overwritten.
+
 FEATURE_REQUESTS.md records FR-001 through FR-021. Research can inform future
 scope; expansion implementation does not displace boot/gameplay. Architecture
 migration requires technical evidence and an approved plan.
