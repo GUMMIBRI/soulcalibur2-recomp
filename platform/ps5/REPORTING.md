@@ -40,6 +40,29 @@ Absence of a shutdown marker alone does not prove a crash.
 
 ## Collection and owner-authorized cleanup
 
+### Character-select freeze checkpoints
+
+The PS5 presenter can publish atomic render-owner checkpoints around shader
+lookup, draw preparation, buffer uploads, draw encoding, command submission
+and swapchain acquisition. Nested scopes restore the outer operation; returned
+operations advance the sequence. Object fields are numeric values, never
+dereferenced to identify native code or resources.
+
+A separate observer samples every250ms and emits one `render-progress` record
+when a coherent checkpoint remains unchanged for at least2seconds. It uses the
+existing per-run sink independently of normal render/GPU logging budgets.
+The rendering thread performs no checkpoint formatting or file I/O. Distinct
+long stalls can produce further records, so log size is rate-limited rather
+than fixed. No record is guaranteed if the process or observer also stops.
+
+An unchanged checkpoint indicates absent observed progress, not a diagnosed
+hang, GPU completion or API success. `phase` and `object_value` describe the
+current operation; completed-operation result annotations are meaningful only
+when explicitly marked valid. Idle time with no active phase can also report.
+The observer starts after device/resources initialize and joins before SDL
+teardown. Background shader precompilation does not publish into this
+single-writer checkpoint state.
+
 Local plan, no network:
 
 ```powershell

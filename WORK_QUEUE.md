@@ -15,9 +15,12 @@ runners, overlapping mutable files, repeated unchanged builds or filler work.
 
 ## Boot lane
 
-Installed candidate is select-probes-r1, source cef5a11. The authoritative
-receipt is private/native-xbe-retest/SELECT-PROBES-UPLOAD.json. The owner is
-testing other modes; no console replacement, cleanup or autonomous launch.
+Installed candidate is texture-retirement-r1, correction source f3eacab. The
+authoritative receipt is private/native-xbe-retest/TEXTURE-RETIREMENT-UPLOAD.json.
+Human test still freezes at character select with no PS5 error screen. Matching
+reports contain neither POSIX fatal observations nor GPU negative results.
+The lifetime correction did not resolve that symptom. No console replacement,
+cleanup or autonomous launch after this test.
 Earlier versions reached variable points including character select, Team
 Versus selections and Weapon Master map; no completed fight is qualified.
 
@@ -34,10 +37,14 @@ startup. Earlier radv-dispatch-r1 lacks a preserved complete link manifest;
 converter and loader companion match all three. Runtime cache/settings are
 not covered by frozen link inputs. Do not claim they were identical.
 
-Active bounded review: gpu_startup_audit owns read-only draw/flush/resource
-lifetime inspection; architecture_research owns read-only receipt/reuse
-comparison; save_enumeration owns read-only reporting/concurrency regression
-review. Forge integrates and maintains evidence. No mutable overlap.
+Active bounded work: Forge owns presenter phase instrumentation;
+architecture_research owns only sc2_ps5_progress.h; gpu_startup_audit reviews
+those changes independently. The low-rate observer records an unchanged
+checkpoint after2seconds independently of exhausted normal probe budgets.
+It observes lack of progress, not a cause or proof of GPU completion. Source
+inspection of fibers/scheduler found no proven character-select cause; a
+separate latent nested-drain starvation defect remains unconnected to this
+path. Do not blend unrelated fixes into the diagnostic candidate.
 
 A separate native undo reader patch remains parked and unrelated to this
 failure. Do not blend it into a crash candidate. Next milestone is a localized

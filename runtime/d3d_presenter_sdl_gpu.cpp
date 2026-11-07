@@ -51,6 +51,16 @@ extern "C" void sc2_ps5_log_stage(const char *) __attribute__((weak));
 #include <unordered_map>
 #include <vector>
 
+#if defined(SC2_PS5)
+#include "sc2_ps5_progress.h"
+#define SC2_PROGRESS_JOIN_(a, b) a##b
+#define SC2_PROGRESS_JOIN(a, b) SC2_PROGRESS_JOIN_(a, b)
+#define SC2_PROGRESS(presenter, phase, object) \
+    SC2PS5Progress::Scope SC2_PROGRESS_JOIN(sc2_progress_, __LINE__)((presenter)->progress, phase, (uint64_t)(object))
+#else
+#define SC2_PROGRESS(presenter, phase, object) ((void)0)
+#endif
+
 #ifdef RECOMP_SMAA
 #include "AreaTex.h"
 #include "SearchTex.h"
@@ -413,6 +423,9 @@ struct RecompD3dPresenter {
 
     Segment segment;
     SDL_GPUCommandBuffer *command_buffer = nullptr;
+#if defined(SC2_PS5)
+    SC2PS5Progress progress;
+#endif
 
     std::mutex shader_lock;
     std::unordered_map<ShaderKey, ShaderPair, ShaderKeyHash, ShaderKeyEqual> shaders;
@@ -523,6 +536,7 @@ bool preferMailbox(bool immediate)
 SDL_GPUCommandBuffer *commandBuffer(RecompD3dPresenter *presenter)
 {
     if (presenter->command_buffer == nullptr) {
+        SC2_PROGRESS(presenter, "acquire-command-buffer", presenter->device);
         presenter->command_buffer = SDL_AcquireGPUCommandBuffer(presenter->device);
     }
     return presenter->command_buffer;
@@ -531,6 +545,7 @@ SDL_GPUCommandBuffer *commandBuffer(RecompD3dPresenter *presenter)
 void submitCommands(RecompD3dPresenter *presenter)
 {
     if (presenter->command_buffer != nullptr) {
+        SC2_PROGRESS(presenter, "submit-command-buffer", presenter->command_buffer);
         SDL_SubmitGPUCommandBuffer(presenter->command_buffer);
         presenter->command_buffer = nullptr;
     }
@@ -1785,6 +1800,7 @@ bool uploadRing(RecompD3dPresenter *presenter, SDL_GPUCopyPass *pass, SDL_GPUBuf
     SDL_GPUTransferBuffer *transfer, uint32_t capacity, uint32_t &used, const std::vector<uint8_t> &bytes,
     uint32_t &base)
 {
+    SC2_PROGRESS(presenter, "upload-ring", buffer);
     const uint32_t size = static_cast<uint32_t>(bytes.size());
     base = (used + 255u) & ~255u;
     const bool wrap = base + size > capacity;
@@ -1802,6 +1818,7 @@ bool uploadRing(RecompD3dPresenter *presenter, SDL_GPUCopyPass *pass, SDL_GPUBuf
 
 void flushSegment(RecompD3dPresenter *presenter)
 {
+    SC2_PROGRESS(presenter, "flush-segment", presenter->segment.draws.size());
     Segment &segment = presenter->segment;
     if (segment.draws.empty()) {
         releaseRetiredTextures(presenter);
@@ -1816,6 +1833,7 @@ void flushSegment(RecompD3dPresenter *presenter)
     SDL_GPUCommandBuffer *commands = ready ? commandBuffer(presenter) : nullptr;
     uint32_t vertex_base = 0u, index_base = 0u;
     if (commands != nullptr) {
+        SC2_PROGRESS(presenter, "copy-segment", commands);
         SDL_GPUCopyPass *copy = SDL_BeginGPUCopyPass(commands);
         ready = copy != nullptr &&
             uploadRing(presenter, copy, presenter->vertex_buffer, presenter->vertex_transfer,
@@ -1826,6 +1844,7 @@ void flushSegment(RecompD3dPresenter *presenter)
     }
     SDL_GPURenderPass *pass = nullptr;
     if (ready && commands != nullptr) {
+        SC2_PROGRESS(presenter, "begin-render-pass", commands);
         SDL_GPUColorTargetInfo color{};
         color.texture = segment.color;
         color.load_op = SDL_GPU_LOADOP_LOAD;
@@ -1850,6 +1869,7 @@ void flushSegment(RecompD3dPresenter *presenter)
         SDL_Rect scissor{-1, -1, -1, -1};
         uint32_t vertex_offset = UINT32_MAX, index_offset = UINT32_MAX;
         for (const QueuedDraw &draw : segment.draws) {
+            SC2_PROGRESS(presenter, "encode-indexed-draw", draw.pipeline);
             if (draw.pipeline != pipeline) {
                 SDL_BindGPUGraphicsPipeline(pass, draw.pipeline);
                 pipeline = draw.pipeline;
@@ -1903,7 +1923,10 @@ void flushSegment(RecompD3dPresenter *presenter)
             }
             SDL_DrawGPUIndexedPrimitives(pass, draw.index_count, 1u, 0u, 0, 0u);
         }
-        SDL_EndGPURenderPass(pass);
+        {
+            SC2_PROGRESS(presenter, "end-render-pass", pass);
+            SDL_EndGPURenderPass(pass);
+        }
     } else {
         std::fprintf(stderr, "recomp d3d presenter: dropped %zu draws: %s\n",
             segment.draws.size(), SDL_GetError());
@@ -2181,6 +2204,7 @@ RecompD3dPresenterError unsupportedDraw(int line)
 
 RecompD3dPresenterError submitDraw(RecompD3dPresenter *presenter, const RecompD3dPresenterDrawCommand &draw)
 {
+    SC2_PROGRESS(presenter, "prepare-draw", draw.fvf);
     const bool screen_offset = draw.screen_space_offset[0] != 0.0f || draw.screen_space_offset[1] != 0.0f;
     const bool geometry_line = recomp_d3d_draw_geometry_line(draw);
     // shortcut: programmable offsets are unsupported, add their viewport contract when needed.
@@ -2235,7 +2259,10 @@ RecompD3dPresenterError submitDraw(RecompD3dPresenter *presenter, const RecompD3
     const RecompD3dDrawShaderKey shader_key{shader_fvf, draw.program_count,
         draw.program_count ? draw.program : nullptr, false, scaled_bias,
         scaled_bias && presenter->msaa_count > 1u, general ? &draw.pixel_program : nullptr};
-    const ShaderPair shaders = lookupShaders(presenter, shader_key, false);
+    const ShaderPair shaders = [&] {
+        SC2_PROGRESS(presenter, "lookup-draw-shaders", shader_fvf);
+        return lookupShaders(presenter, shader_key, false);
+    }();
     if (shaders.vertex == nullptr) return unsupportedDraw(__LINE__);
 
     BoundTarget bound;
@@ -3163,6 +3190,7 @@ void updateShaderChain(RecompD3dPresenter *presenter)
 
 RecompD3dPresenterError submitPresent(RecompD3dPresenter *presenter, const RecompD3dPresenterPresentCommand &present)
 {
+    SC2_PROGRESS(presenter, "present", presenter->present_count);
     if (present.effective_flags != 5u || present.swap_counter == 0u) {
         return RECOMP_D3D_PRESENTER_UNSUPPORTED_COMMAND;
     }
@@ -3207,7 +3235,11 @@ RecompD3dPresenterError submitPresent(RecompD3dPresenter *presenter, const Recom
         uint32_t width, height;
         const char *path;
     } shaded_shot{};
-    if (SDL_WaitAndAcquireGPUSwapchainTexture(commands, presenter->window, &swapchain, &swap_width, &swap_height) &&
+    const bool swap_acquired = [&] {
+        SC2_PROGRESS(presenter, "wait-acquire-swapchain", commands);
+        return SDL_WaitAndAcquireGPUSwapchainTexture(commands, presenter->window, &swapchain, &swap_width, &swap_height);
+    }();
+    if (swap_acquired &&
         swapchain != nullptr && swap_width != 0u && swap_height != 0u) {
         // The window keeps the guest aspect; the rest of the swapchain is black.
         const float source_aspect = static_cast<float>(presentClientWidth(presenter, mainHeight(presenter))) /
@@ -3671,6 +3703,9 @@ RecompD3dPresenterError d3d_backend_create(const RecompD3dPresenterConfig *confi
         // Shaders then compile on first use.
     }
     active_presenter = created;
+#if defined(SC2_PS5)
+    created->progress.start();
+#endif
     *presenter = created;
     return RECOMP_D3D_PRESENTER_OK;
 }
@@ -3690,6 +3725,10 @@ RecompD3dPresenterError d3d_backend_submit(RecompD3dPresenter *presenter, const 
     case RECOMP_D3D_PRESENTER_COMMAND_PRESENT:
         return submitPresent(presenter, command->data.present);
     case RECOMP_D3D_PRESENTER_COMMAND_DRAW: {
+#if defined(SC2_PS5)
+        presenter->progress.frame(presenter->present_count);
+        presenter->progress.draw(presenter->draw_count);
+#endif
         const auto start = std::chrono::steady_clock::now();
         const auto error = submitDraw(presenter, command->data.draw);
         if (presenter->draw_log_active) {
@@ -3920,6 +3959,9 @@ RecompD3dPresenterError d3d_backend_destroy(RecompD3dPresenter **presenter)
     active_presenter = nullptr;
     *presenter = nullptr;
     destroyed->precompile_stop = true;
+#if defined(SC2_PS5)
+    destroyed->progress.stop();
+#endif
     if (destroyed->precompile.joinable()) destroyed->precompile.join();
     releasePresenter(destroyed);
     delete destroyed;

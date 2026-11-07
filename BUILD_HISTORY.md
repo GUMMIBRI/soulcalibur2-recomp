@@ -68,6 +68,22 @@ Candidate is local only, not installed or human qualified. Private finalization:
 private/ps5-app-texture-retirement-r1-20261106/FINALIZATION.json. No unrelated
 submission policy, shaders, assets, caches or saves changed.
 
+Subsequent update: texture-retirement-r1 was installed under the authorized USB
+app root. Human reports the same character-select freeze, explicitly without
+a PS5 error screen. Matching build-token report contains no fatal observation
+or GPU-negative record; its normal probe budgets still exhausted. This corrects
+the earlier candidate-only status above and does not establish the texture
+defect as the freeze cause. The app directory has no settings.ini override;
+the default pure preset leaves graphics enhancements off.
+
+Next diagnostic source, progress-watch-r1, adds render-owner atomic phase
+checkpoints plus an independent low-rate unchanged-progress observer. This
+addresses the proven observability gap: normal logging stopped before the
+failure. Independent source reviews passed, including nested phase restoration,
+single-writer ownership, lifetime/join ordering and explicit result validity;
+SDK presenter compilation passed. It is not a correction for an established
+hang cause. No console installation or gameplay result is claimed here.
+
 Record identifier, commit, exact bounded changes, hypothesis, expected stage,
 actual observed stage, matching finalized and upload receipts, crash evidence,
 and confirmed/rejected/unconfirmed result. Read fresh evidence before changes.
