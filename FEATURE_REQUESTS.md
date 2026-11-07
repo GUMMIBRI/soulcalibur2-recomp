@@ -33,8 +33,10 @@ completed. Compilation alone never establishes completion. Updated November6,202
 - Priority: P1
 - Status: testing
 - Intended behavior: FSR,1x–8x internal resolution, HD textures, widescreen/fullscreen and stable pacing. Compare HD models, effects, lighting and rendering improvements across recompilation projects.
+- Owner selection policy: Mix compatible GameCube HD, PS2 HD and PC/HD Online donors per character/costume/material to cover the full roster. Choose demonstrated quality, preserve original texture/model fallback, and keep enhancements off by default. PC HD Online uses PS3 game assets; no superior independent PC texture set is assumed.
 - Dependencies and risks: Boot/render baseline first; scaling cost, shader correctness and PS2/GC/Spawn texture mappings.
 - Sources and references: runtime/sc2_fsr.cpp; runtime/d3d_presenter_sdl_gpu.cpp; textures layout
+- Additional evidence: research/HD-ONLINE-REUSE-AUDIT.md records concrete reuse, base-selection gaps and the unimplemented deterministic mixed-pack profile.
 - Acceptance criteria and evidence: PS5 images and measured pacing at selected settings; code/assets exist and intro rendering is confirmed; gameplay, FSR and scaling modes remain unqualified.
 
 ### FR-021 — Natural in-game video settings
